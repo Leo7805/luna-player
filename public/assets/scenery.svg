@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#091428" />
+      <stop offset="35%" stop-color="#142850" />
+      <stop offset="65%" stop-color="#2c4a75" />
+      <stop offset="85%" stop-color="#516982" />
+      <stop offset="100%" stop-color="#768ca0" />
+    </linearGradient>
+    
+    <linearGradient id="sunGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fed7aa" stop-opacity="0.8" />
+      <stop offset="40%" stop-color="#fdba74" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#fb923c" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="mountainGradFar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334d6e" />
+      <stop offset="100%" stop-color="#1b2a40" />
+    </linearGradient>
+
+    <linearGradient id="mountainGradMid" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e2e42" />
+      <stop offset="100%" stop-color="#111c2a" />
+    </linearGradient>
+
+    <linearGradient id="mountainGradNear" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#101924" />
+      <stop offset="100%" stop-color="#080d14" />
+    </linearGradient>
+
+    <linearGradient id="lakeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1d2e45" />
+      <stop offset="40%" stop-color="#101c2c" />
+      <stop offset="100%" stop-color="#080e18" />
+    </linearGradient>
+
+    <filter id="softGaze" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="30" />
+    </filter>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="1920" height="1080" fill="url(#skyGrad)" />
+
+  <!-- Ambient celestial glow / moon -->
+  <circle cx="1420" cy="240" r="160" fill="url(#sunGlow)" filter="url(#softGaze)" />
+  <circle cx="1420" cy="240" r="38" fill="#ffedd5" opacity="0.92" />
+  <circle cx="1432" cy="235" r="34" fill="#142850" opacity="0.85" />
+
+  <!-- Distant Stars -->
+  <g fill="#ffffff" opacity="0.6">
+    <circle cx="210" cy="80" r="1.5" />
+    <circle cx="380" cy="140" r="1" />
+    <circle cx="560" cy="65" r="2" opacity="0.8" />
+    <circle cx="720" cy="190" r="1.2" />
+    <circle cx="950" cy="90" r="1.5" />
+    <circle cx="1120" cy="130" r="1.8" />
+    <circle cx="1680" cy="70" r="2" opacity="0.9" />
+    <circle cx="1800" cy="160" r="1.2" />
+    <circle cx="120" cy="220" r="1.5" />
+    <circle cx="850" cy="250" r="1" />
+    <circle cx="1740" cy="290" r="1.5" />
+  </g>
+
+  <!-- Far Mountain Ridge -->
+  <path d="M 0 650 Q 240 520, 520 590 T 1080 540 T 1540 580 T 1920 530 L 1920 1080 L 0 1080 Z" fill="url(#mountainGradFar)" opacity="0.8" />
+
+  <!-- Mid Mountain Range -->
+  <path d="M 0 710 Q 320 570, 680 670 T 1320 620 T 1920 680 L 1920 1080 L 0 1080 Z" fill="url(#mountainGradMid)" />
+
+  <!-- Foreground Mountains & Lake Shore -->
+  <path d="M 0 780 Q 260 690, 560 760 T 1140 730 T 1720 770 T 1920 740 L 1920 1080 L 0 1080 Z" fill="url(#mountainGradNear)" />
+
+  <!-- Calm Lake Surface -->
+  <polygon points="0,820 1920,800 1920,1080 0,1080" fill="url(#lakeGrad)" />
+
+  <!-- Lake water specular reflections -->
+  <ellipse cx="1420" cy="910" rx="140" ry="8" fill="#fed7aa" opacity="0.18" filter="url(#softGaze)" />
+  <line x1="1350" y1="880" x2="1490" y2="880" stroke="#fed7aa" stroke-width="1.5" opacity="0.25" />
+  <line x1="1310" y1="915" x2="1530" y2="915" stroke="#fed7aa" stroke-width="2" opacity="0.35" />
+  <line x1="1370" y1="950" x2="1470" y2="950" stroke="#fed7aa" stroke-width="1.2" opacity="0.2" />
+</svg>
