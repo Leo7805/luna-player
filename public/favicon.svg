@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Antenna stalk -->
+  <rect x="59" y="27" width="10" height="15" rx="3" fill="#021c4d" />
+
+  <!-- Base feet -->
+  <rect x="34" y="106" width="24" height="16" rx="8" fill="#021c4d" />
+  <rect x="70" y="106" width="24" height="16" rx="8" fill="#021c4d" />
+
+  <!-- Main circular body -->
+  <circle cx="64" cy="74" r="42" fill="#ffffff" stroke="#021c4d" stroke-width="8" />
+
+  <!-- Center rounded play symbol -->
+  <path d="M54 58.5 C54 56.5 56.2 55.2 58 56.2 L83.5 71.2 C85.3 72.2 85.3 74.8 83.5 75.8 L58 90.8 C56.2 91.8 54 90.5 54 88.5 Z"
+        fill="#0083fd" stroke="#021c4d" stroke-width="5" stroke-linejoin="round" />
+
+  <!-- Top antenna ball -->
+  <circle cx="64" cy="18" r="14" fill="#0083fd" stroke="#021c4d" stroke-width="6" />
+
+  <!-- Crescent moon inside antenna -->
+  <path d="M66 10 C61.5 10 57.5 13.5 57.5 18 C57.5 22.5 61.5 26 66 26 C63 24 61.5 21.2 61.5 18 C61.5 14.8 63 12 66 10 Z"
+        fill="#ffffff" />
+</svg>

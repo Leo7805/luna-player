@@ -11,7 +11,7 @@
     "test:e2e": "playwright test"
   },
   "keywords": [],
-  "author": "",
+  "author": "Jin Liu",
   "license": "MIT",
   "dependencies": {
     "lucide-react": "^1.66.0",

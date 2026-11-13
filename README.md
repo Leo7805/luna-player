@@ -1,10 +1,28 @@
-# Luna Player 🌙
+<p align="center">
+  <img src="public/favicon.svg" alt="Luna Player Logo" width="88" height="88" />
+</p>
 
-A modern, lightweight, browser-based local video player.
+<h1 align="center">Luna Player</h1>
+
+<p align="center">
+  <strong>A modern, lightweight, private browser-based local video player.</strong>
+</p>
 
 Open any local folder, automatically discover videos across nested subdirectories, browse them in a hierarchical playlist with natural sorting, and play them directly in your browser.
 
 **Core Philosophy:** Simple, beautiful, private, and easy to use.
+
+---
+
+## 📸 Preview
+
+![Luna Player Overview](docs/screenshots/overview.png)
+
+### Modes & Layouts
+
+| Dark Mode | Theater Mode |
+| :---: | :---: |
+| ![Dark Mode](docs/screenshots/dark-mode.png) | ![Theater Mode](docs/screenshots/theater-mode.png) |
 
 ---
 
@@ -27,7 +45,7 @@ Open any local folder, automatically discover videos across nested subdirectorie
   - **Continuous Navigation**: Dedicated Next/Previous controls maintain playback state.
   - **Pause/Resume**: Clicking the active video resumes playback.
 - **💾 Playback Persistence**
-  - Collision-proof library and video hashing preserves resume positions across browser sessions.
+  - Collision-proof library and video hashing preserves resume positions across browser sessions via IndexedDB.
   - Automatically restarts completed videos from the beginning.
 - **🎭 Theater Mode & Fullscreen**
   - Expanded theater layout with auto-hiding floating overlays.
@@ -48,7 +66,8 @@ Open any local folder, automatically discover videos across nested subdirectorie
 - **Build Tool**: [Vite 8](https://vitejs.dev/)
 - **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
 - **Icons**: [Lucide React](https://lucide.dev/)
-- **APIs**: HTML5 Video API, File System Access API, IndexedDB
+- **Storage**: IndexedDB & LocalStorage
+- **APIs**: HTML5 Video API, File System Access API
 - **Testing**: [Vitest](https://vitest.dev/) (Unit) & [Playwright Test](https://playwright.dev/) (Chromium E2E)
 
 ---
@@ -60,25 +79,16 @@ Open any local folder, automatically discover videos across nested subdirectorie
 - [Node.js](https://nodejs.org/) (v18.0.0 or higher recommended)
 - `npm` (or `pnpm` / `yarn`)
 
-### Installation
+### Local Development
 
-Clone the repository and install dependencies:
+Install dependencies and start the local development server:
 
 ```bash
-git clone <repository-url>
-cd luna-player
 npm install
-```
-
-### Development Server
-
-Start the local development server:
-
-```bash
 npm run dev
 ```
 
-Open your browser and navigate to `http://localhost:5173`.
+Open `http://localhost:5173` in your browser.
 
 ### Production Build
 
@@ -106,7 +116,7 @@ Run the fast unit test suite covering natural sorting, video tree construction, 
 npm test
 ```
 
-### End-to-End Smoke Tests (Playwright)
+### End-to-End Tests (Playwright)
 
 Run the full automated browser test suite against Chromium (includes directory picker mocks, real video playback verification, auto-hide overlay interactions, and visual regression checks):
 
@@ -120,41 +130,27 @@ npm run test:e2e
 
 ```
 luna-player/
+├── docs/
+│   ├── branding/              # Authoritative mascot design reference
+│   └── screenshots/           # Application screenshots (overview, dark, theater)
 ├── public/
-│   └── assets/
-│       ├── scenery.webp       # Photographic alpine backdrop
-│       └── scenery.svg        # Scalable vector backdrop fallback
+│   ├── favicon.svg            # Official vector mascot favicon
+│   └── assets/                # Static alpine photographic backdrop
 ├── src/
-│   ├── assets/                # Bundled assets
-│   ├── components/
-│   │   ├── EmptyState.tsx     # Clean empty workspace with folder picker
-│   │   ├── Header.tsx         # Brand title, folder metadata, theme toggle
-│   │   ├── PlayerControls.tsx # Next/Prev, playback counter, autoplay toggles
-│   │   ├── Playlist.tsx       # Hierarchical tree container and search input
-│   │   ├── PlaylistFolder.tsx # Collapsible directory node
-│   │   ├── PlaylistItem.tsx   # Video row with progress indicator
-│   │   ├── RecoveryBanner.tsx # Stored directory permission re-grant prompt
-│   │   └── VideoPlayer.tsx    # HTML5 video surface, overlay controls
-│   ├── hooks/
-│   │   ├── usePlayback.ts     # Playback state, auto-play, resume coordination
-│   │   ├── useTheme.ts        # Light/Dark scheme switcher & localStorage sync
-│   │   └── useVideoLibrary.ts # FSA API scanner, tree generator, fallback picker
-│   ├── services/
-│   │   ├── fallbackAccess.ts  # webkitdirectory FileList parser
-│   │   ├── fileSystemAccess.ts# Recursive FSA directory scanner
-│   │   └── progressStorage.ts # Persistent progress & settings storage
-│   ├── types/
-│   │   └── video.ts           # TypeScript interfaces for video nodes & libraries
-│   ├── utils/
-│   │   ├── formatters.ts      # Duration and file size formatting helpers
-│   │   ├── naturalSort.ts     # Numeric-aware natural string comparison
-│   │   └── videoTree.ts       # Tree builder and deterministic DFS traverser
+│   ├── assets/                # Bundled backdrop assets
+│   ├── components/            # UI components (Header, EmptyState, VideoPlayer, Playlist)
+│   ├── hooks/                 # Custom React hooks (usePlayback, useTheme, useVideoLibrary)
+│   ├── services/              # File system, directory traversal & IndexedDB storage
+│   ├── types/                 # TypeScript interfaces
+│   ├── utils/                 # Natural sort and tree traversal algorithms
 │   ├── App.tsx                # Main application layout and state wiring
 │   ├── index.css              # Tailwind utilities, class variants, glassmorphism
 │   └── main.tsx               # React application entry point
 ├── tests/
 │   ├── e2e/                   # Playwright E2E smoke and regression suites
-│   └── fixtures/              # Sample local library test video fixtures
+│   ├── fixtures/              # Sample local library test video fixtures
+│   └── *.test.ts              # Vitest unit test suites
+├── LICENSE                    # MIT License
 ├── package.json
 ├── playwright.config.ts
 ├── tsconfig.json

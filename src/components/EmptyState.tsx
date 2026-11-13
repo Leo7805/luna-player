@@ -47,8 +47,8 @@ export function EmptyState({
         />
 
         {/* Icon & Glow */}
-        <div className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-tr from-sky-500/20 via-indigo-500/20 to-sky-400/30 border border-sky-400/30 text-sky-500 dark:text-sky-400 shadow-xl shadow-sky-500/10">
-          <FolderOpen className="h-9 w-9" />
+        <div className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-tr from-sky-500/20 via-indigo-500/20 to-sky-400/30 border border-sky-400/30 shadow-xl shadow-sky-500/10">
+          <img src="/favicon.svg" alt="Luna Player" className="h-11 w-11" />
           <div className="absolute inset-0 rounded-3xl bg-sky-400/10 blur-xl -z-10" />
         </div>
 
