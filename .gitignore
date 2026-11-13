@@ -24,6 +24,7 @@ test-results/
 playwright-report/
 blob-report/
 screenshots/
+!docs/screenshots/
 tests/visual-verification/
 
 # Environment variables

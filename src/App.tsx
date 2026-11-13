@@ -10,7 +10,6 @@ import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { loadSettings, saveSettings } from './services/progressStorage';
 import { ListVideo } from 'lucide-react';
-import sceneryBg from './assets/scenery.webp';
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
@@ -95,19 +94,23 @@ export function App() {
         theme === 'dark' ? 'text-slate-100' : 'text-slate-900'
       }`}
     >
-      {/* High-Resolution Scenic Photographic Background (Moraine Lake & Alpine Peaks) */}
+      {/* Distant Panoramic Mountain Backdrop */}
       <div
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-all duration-700"
-        style={{ backgroundImage: `url(${sceneryBg})` }}
+        className={`fixed inset-0 pointer-events-none z-0 bg-cover bg-center md:bg-[center_35%] bg-no-repeat transition-all duration-700 ${
+          theme === 'dark'
+            ? 'brightness-[0.82] contrast-[1.05] saturate-[0.95]'
+            : 'brightness-[1.02] contrast-[0.98] saturate-[1.05]'
+        }`}
+        style={{ backgroundImage: "url('/assets/scenery-distant.jpeg')" }}
         data-testid="scenic-background"
       />
 
-      {/* Theme-Aware Atmospheric Ambient Overlays */}
+      {/* Theme-Aware Atmospheric Ambient Overlays & Subtle Blur */}
       <div
-        className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
+        className={`fixed inset-0 pointer-events-none z-0 transition-all duration-500 ${
           theme === 'dark'
-            ? 'bg-slate-950/70 backdrop-blur-[2px]'
-            : 'bg-gradient-to-b from-sky-100/30 via-white/10 to-sky-50/30 backdrop-blur-[0.5px]'
+            ? 'bg-slate-950/45 backdrop-blur-[2.5px]'
+            : 'bg-gradient-to-b from-sky-950/10 via-sky-500/5 to-slate-900/15 backdrop-blur-[1.5px]'
         }`}
       />
 

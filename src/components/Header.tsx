@@ -36,8 +36,8 @@ export function Header({
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-sky-500/20 to-indigo-500/30 border border-sky-500/30 shadow-inner overflow-hidden">
-            <img src="/favicon.svg" alt="Luna Player" className="h-6 w-6" />
+          <div className="flex h-10 w-10 items-center justify-center shrink-0">
+            <img src="/favicon.svg" alt="Luna Player" className="h-9 w-9 object-contain drop-shadow-sm" />
           </div>
           <div>
             <div className="flex items-center gap-2">
