@@ -3,6 +3,7 @@ import { Search, X, ListVideo, ChevronsUpDown, AudioLines, PanelRightClose } fro
 import { VideoLibrary, VideoItem } from '../types/video';
 import { PlaylistFolder } from './PlaylistFolder';
 import { ExtractAudioDialog } from './ExtractAudioDialog';
+import { Tooltip } from './Tooltip';
 
 interface PlaylistProps {
   library: VideoLibrary;
@@ -47,38 +48,42 @@ export function Playlist({
 
           <div className="flex items-center gap-1">
             {totalVideos > 0 && (
-              <button
-                type="button"
-                onClick={() => setIsExtractDialogOpen(true)}
-                className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
-                title="Extract audio from all videos in playlist"
-                aria-label="Extract Audio"
-              >
-                <AudioLines className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                <span className="hidden sm:inline">Extract Audio</span>
-              </button>
+              <Tooltip content="Extract audio from playlist" placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setIsExtractDialogOpen(true)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
+                  aria-label="Extract Audio"
+                >
+                  <AudioLines className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span className="hidden sm:inline">Extract Audio</span>
+                </button>
+              </Tooltip>
             )}
 
-            <button
-              onClick={() => setManualExpandAll((prev) => (prev ? false : true))}
-              className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
-              title="Toggle expand/collapse all folders"
-            >
-              <ChevronsUpDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
-              <span>{defaultExpanded ? 'Collapse All' : 'Expand All'}</span>
-            </button>
-
-            {onCollapseSidebar && (
+            <Tooltip content={defaultExpanded ? 'Collapse all folders' : 'Expand all folders'} placement="bottom">
               <button
                 type="button"
-                onClick={onCollapseSidebar}
-                className="hidden lg:inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
-                title="Collapse playlist sidebar"
-                aria-label="Collapse playlist"
-                data-testid="collapse-playlist-button"
+                onClick={() => setManualExpandAll((prev) => (prev ? false : true))}
+                className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
               >
-                <PanelRightClose className="h-3.5 w-3.5" />
+                <ChevronsUpDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
+                <span>{defaultExpanded ? 'Collapse All' : 'Expand All'}</span>
               </button>
+            </Tooltip>
+
+            {onCollapseSidebar && (
+              <Tooltip content="Hide Playlist" placement="left">
+                <button
+                  type="button"
+                  onClick={onCollapseSidebar}
+                  className="hidden lg:inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  aria-label="Hide Playlist"
+                  data-testid="collapse-playlist-button"
+                >
+                  <PanelRightClose className="h-4 w-4" />
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>

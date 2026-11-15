@@ -1,20 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useVideoLibrary } from './hooks/useVideoLibrary';
 import { usePlayback } from './hooks/usePlayback';
 import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Header';
 import { VideoPlayer } from './components/VideoPlayer';
-import { PlayerControls } from './components/PlayerControls';
 import { Playlist } from './components/Playlist';
 import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
+import { Tooltip } from './components/Tooltip';
 import { loadSettings, saveSettings } from './services/progressStorage';
-import { ListVideo, PanelRightOpen } from 'lucide-react';
+import { PanelRightOpen } from 'lucide-react';
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
   const [isTheaterMode, setIsTheaterMode] = useState(false);
-  const [showTheaterPlaylist, setShowTheaterPlaylist] = useState(false);
   const [isPlaylistCollapsed, setIsPlaylistCollapsed] = useState<boolean>(
     () => Boolean(loadSettings().playlistCollapsed)
   );
@@ -40,6 +39,10 @@ export function App() {
     autoplayBlocked,
     playerError,
     autoplayNext,
+    currentTime,
+    duration,
+    volume,
+    muted,
     currentIndex,
     totalCount,
     hasNext,
@@ -48,6 +51,11 @@ export function App() {
     playNext,
     playPrevious,
     toggleAutoplayNext,
+    togglePlayPause,
+    seekTo,
+    setVolume,
+    toggleMute,
+    handleVolumeChange,
     handleLoadedMetadata,
     handleTimeUpdate,
     handlePlay,
@@ -87,16 +95,43 @@ export function App() {
     }
   }, [library, selectVideo]);
 
+  const hasVideos = Boolean(library && library.flatPlaylist.length > 0);
+  const isTheaterActive = isTheaterMode && hasVideos;
+
   const toggleTheaterMode = () => {
     setIsTheaterMode((prev) => !prev);
   };
 
   useEffect(() => {
-    if (!isTheaterMode) return;
+    if (isTheaterMode && !hasVideos) {
+      setIsTheaterMode(false);
+    }
+  }, [isTheaterMode, hasVideos]);
+
+  useEffect(() => {
+    if (!isTheaterActive) return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, [isTheaterActive]);
+
+  useEffect(() => {
+    if (!isTheaterActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.key === 'Escape' &&
         !document.fullscreenElement &&
+        !document.querySelector('[role="dialog"]') &&
         !document.querySelector('[data-testid="extract-audio-modal"]')
       ) {
         setIsTheaterMode(false);
@@ -104,146 +139,110 @@ export function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isTheaterMode]);
+  }, [isTheaterActive]);
 
   const handleSetPlaylistCollapsed = (collapsed: boolean) => {
     setIsPlaylistCollapsed(collapsed);
     saveSettings({ playlistCollapsed: collapsed });
   };
 
+  const mainStageStyle = {
+    '--player-max-h': 'clamp(220px, calc(100dvh - 8.25rem), 760px)',
+  } as React.CSSProperties;
+
   return (
     <div
-      className={`relative min-h-screen flex flex-col font-sans transition-colors duration-300 selection:bg-sky-500/30 selection:text-sky-700 dark:selection:text-sky-200 overflow-x-hidden ${
-        theme === 'dark' ? 'text-slate-100' : 'text-slate-900'
+      className={`relative min-h-dvh flex flex-col font-sans transition-colors duration-300 selection:bg-sky-500/30 selection:text-sky-700 dark:selection:text-sky-200 overflow-x-hidden ${
+        isTheaterActive
+          ? 'bg-black text-slate-100'
+          : theme === 'dark'
+          ? 'text-slate-100'
+          : 'text-slate-900'
       }`}
     >
-      {/* Distant Panoramic Mountain Backdrop */}
-      <div
-        className={`fixed inset-0 pointer-events-none z-0 bg-cover bg-center md:bg-[center_35%] bg-no-repeat transition-all duration-700 ${
-          theme === 'dark'
-            ? 'brightness-[0.82] contrast-[1.05] saturate-[0.95]'
-            : 'brightness-[1.02] contrast-[0.98] saturate-[1.05]'
-        }`}
-        style={{ backgroundImage: "url('/assets/scenery-distant.jpeg')" }}
-        data-testid="scenic-background"
-      />
+      {/* Distant Panoramic Mountain Backdrop (hidden in Theater Mode) */}
+      {!isTheaterActive && (
+        <>
+          <div
+            className={`fixed inset-0 pointer-events-none z-0 bg-cover bg-center md:bg-[center_35%] bg-no-repeat transition-all duration-700 ${
+              theme === 'dark'
+                ? 'brightness-[0.82] contrast-[1.05] saturate-[0.95]'
+                : 'brightness-[1.02] contrast-[0.98] saturate-[1.05]'
+            }`}
+            style={{ backgroundImage: "url('/assets/scenery-distant.jpeg')" }}
+            data-testid="scenic-background"
+          />
 
-      {/* Theme-Aware Atmospheric Ambient Overlays & Subtle Blur */}
-      <div
-        className={`fixed inset-0 pointer-events-none z-0 transition-all duration-500 ${
-          theme === 'dark'
-            ? 'bg-slate-950/45 backdrop-blur-[2.5px]'
-            : 'bg-gradient-to-b from-sky-950/10 via-sky-500/5 to-slate-900/15 backdrop-blur-[1.5px]'
-        }`}
-      />
+          {/* Theme-Aware Atmospheric Ambient Overlays & Subtle Blur */}
+          <div
+            className={`fixed inset-0 pointer-events-none z-0 transition-all duration-500 ${
+              theme === 'dark'
+                ? 'bg-slate-950/45 backdrop-blur-[2.5px]'
+                : 'bg-gradient-to-b from-sky-950/10 via-sky-500/5 to-slate-900/15 backdrop-blur-[1.5px]'
+            }`}
+          />
+        </>
+      )}
 
       {/* Foreground Content Container */}
-      <div className="relative z-10 flex flex-col min-h-screen">
-        {/* Header */}
-        <Header
-          library={library}
-          onOpenFolder={openFolder}
-          onFallbackSelect={handleFallbackFiles}
-          isFsaSupported={isFsaSupported}
-          isScanning={isScanning}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
+      <div className="relative z-10 flex flex-col min-h-dvh">
+        {/* Header (kept mounted, hidden in Theater Mode) */}
+        <div
+          className={isTheaterActive ? 'hidden' : undefined}
+          aria-hidden={isTheaterActive || undefined}
+          inert={isTheaterActive ? true : undefined}
+        >
+          <Header
+            library={library}
+            onOpenFolder={openFolder}
+            onFallbackSelect={handleFallbackFiles}
+            isFsaSupported={isFsaSupported}
+            isScanning={isScanning}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+        </div>
 
         {/* Reauthorization / Directory Recovery Banner */}
         {storedHandlePrompt && (
-          <RecoveryBanner
-            prompt={storedHandlePrompt}
-            onGrant={reauthorizeStoredHandle}
-            onDismiss={dismissStoredHandle}
-          />
+          <div
+            className={isTheaterActive ? 'hidden' : undefined}
+            aria-hidden={isTheaterActive || undefined}
+            inert={isTheaterActive ? true : undefined}
+          >
+            <RecoveryBanner
+              prompt={storedHandlePrompt}
+              onGrant={reauthorizeStoredHandle}
+              onDismiss={dismissStoredHandle}
+            />
+          </div>
         )}
 
-      {/* Main Workspace */}
-      <main
-        className={`flex-1 flex flex-col w-full mx-auto p-4 sm:p-6 lg:p-8 transition-all duration-300 ${
-          isTheaterMode ? 'max-w-[1600px]' : 'max-w-7xl'
-        }`}
-      >
-        {library && library.flatPlaylist.length > 0 ? (
-          isTheaterMode ? (
-            /* --- Theater Mode Layout --- */
-            <div className="flex flex-col gap-4 w-full">
-              {/* Full Width Theater Video Player */}
-              <div className="w-full flex justify-center">
-                <VideoPlayer
-                  videoRef={videoRef}
-                  currentVideo={currentVideo}
-                  videoSrc={videoSrc}
-                  isPlaying={isPlaying}
-                  autoplayBlocked={autoplayBlocked}
-                  playerError={playerError}
-                  isTheaterMode={true}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onTimeUpdate={handleTimeUpdate}
-                  onPlay={handlePlay}
-                  onPause={handlePause}
-                  onSeeked={handleSeeked}
-                  onVideoError={handleVideoError}
-                  onEnded={handleEnded}
-                  onManualPlay={handleManualPlay}
-                />
-              </div>
-
-              {/* Theater Mode Controls */}
-              <PlayerControls
-                currentVideo={currentVideo}
-                currentIndex={currentIndex}
-                totalCount={totalCount}
-                hasNext={hasNext}
-                hasPrevious={hasPrevious}
-                autoplayNext={autoplayNext}
-                isTheaterMode={true}
-                onPlayNext={playNext}
-                onPlayPrevious={playPrevious}
-                onToggleAutoplayNext={toggleAutoplayNext}
-                onToggleTheaterMode={toggleTheaterMode}
-              />
-
-              {/* Toggleable Playlist in Theater Mode */}
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <button
-                    onClick={() => setShowTheaterPlaylist((prev) => !prev)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl glass-button text-xs font-semibold cursor-pointer shadow-sm text-slate-800 dark:text-slate-200"
-                  >
-                    <ListVideo className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-                    <span>
-                      {showTheaterPlaylist ? 'Hide Playlist' : `Show Playlist (${totalCount} videos)`}
-                    </span>
-                  </button>
-                </div>
-
-                {showTheaterPlaylist && (
-                  <div className="h-[480px] w-full mt-2 animate-in fade-in duration-200">
-                    <Playlist
-                      library={library}
-                      currentVideo={currentVideo}
-                      onSelectVideo={(video) => selectVideo(video, true)}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* --- Normal Split Screen Layout (with collapsible desktop Playlist sidebar) --- */
+        {/* Main Workspace */}
+        <main
+          style={isTheaterActive ? undefined : mainStageStyle}
+          className={`flex-1 flex flex-col justify-center w-full mx-auto ${
+            isTheaterActive
+              ? 'p-0 max-w-none'
+              : 'px-4 sm:px-6 lg:px-8 py-3 lg:py-4 max-w-[1520px] transition-all duration-300'
+          }`}
+        >
+          {hasVideos && library ? (
+            /* --- Unified Layout Tree (Normal Split Screen & Immersive Theater Mode share one DOM tree) --- */
             <div
-              className="relative flex flex-col lg:flex-row lg:items-stretch w-full gap-6 lg:gap-0"
+              className={`relative flex flex-col lg:flex-row lg:items-stretch w-full mx-auto gap-5 lg:gap-0 ${
+                isTheaterActive
+                  ? 'max-w-none'
+                  : isPlaylistCollapsed
+                  ? 'lg:max-w-[min(1080px,calc(var(--player-max-h)*16/9))]'
+                  : 'lg:max-w-[min(100%,calc(var(--player-max-h)*16/9+408px))]'
+              }`}
               data-testid="desktop-split-layout"
             >
-              {/* Left Column: Video Player & Controls */}
+              {/* Left Column: Video Player (with integrated controls; fixed full-viewport in Theater Mode) */}
               <div
                 data-testid="player-column"
-                className={`w-full flex flex-col gap-4 min-w-0 lg:transition-all lg:duration-200 ease-out ${
-                  isPlaylistCollapsed
-                    ? 'lg:max-w-5xl xl:max-w-[1080px] lg:mx-auto'
-                    : 'lg:flex-1'
-                }`}
+                className="w-full flex flex-col min-w-0 lg:flex-1 lg:transition-all lg:duration-200 ease-out"
               >
                 <VideoPlayer
                   videoRef={videoRef}
@@ -252,43 +251,51 @@ export function App() {
                   isPlaying={isPlaying}
                   autoplayBlocked={autoplayBlocked}
                   playerError={playerError}
-                  isTheaterMode={false}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onTimeUpdate={handleTimeUpdate}
-                  onPlay={handlePlay}
-                  onPause={handlePause}
-                  onSeeked={handleSeeked}
-                  onVideoError={handleVideoError}
-                  onEnded={handleEnded}
-                  onManualPlay={handleManualPlay}
-                />
-
-                <PlayerControls
-                  currentVideo={currentVideo}
+                  currentTime={currentTime}
+                  duration={duration}
+                  volume={volume}
+                  muted={muted}
                   currentIndex={currentIndex}
                   totalCount={totalCount}
                   hasNext={hasNext}
                   hasPrevious={hasPrevious}
                   autoplayNext={autoplayNext}
-                  isTheaterMode={false}
+                  isTheaterMode={isTheaterActive}
+                  onToggleTheaterMode={toggleTheaterMode}
+                  onToggleAutoplayNext={toggleAutoplayNext}
+                  onTogglePlayPause={togglePlayPause}
+                  onSeek={seekTo}
                   onPlayNext={playNext}
                   onPlayPrevious={playPrevious}
-                  onToggleAutoplayNext={toggleAutoplayNext}
-                  onToggleTheaterMode={toggleTheaterMode}
+                  onToggleMute={toggleMute}
+                  onVolumeChange={setVolume}
+                  onNativeVolumeChange={handleVolumeChange}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  onTimeUpdate={handleTimeUpdate}
+                  onPlay={handlePlay}
+                  onPause={handlePause}
+                  onSeeked={handleSeeked}
+                  onError={handleVideoError}
+                  onEnded={handleEnded}
+                  onManualPlay={handleManualPlay}
                 />
               </div>
 
-              {/* Right Column: Hierarchical Playlist (Matches Player Column height on lg desktop, stacked on mobile/tablet) */}
+              {/* Right Column: Hierarchical Playlist (kept mounted & hidden in Theater Mode to preserve state) */}
               <aside
                 aria-label="Playlist sidebar"
                 data-testid="playlist-sidebar"
-                className={`relative w-full h-[520px] sm:h-[580px] lg:h-auto shrink-0 lg:transition-all lg:duration-200 ease-out ${
-                  isPlaylistCollapsed
+                aria-hidden={isTheaterActive || undefined}
+                inert={isTheaterActive ? true : undefined}
+                className={`relative w-full h-[460px] sm:h-[520px] lg:h-auto shrink-0 lg:transition-all lg:duration-200 ease-out ${
+                  isTheaterActive
+                    ? 'hidden'
+                    : isPlaylistCollapsed
                     ? 'lg:w-0 lg:ml-0 lg:opacity-0 lg:translate-x-4 lg:pointer-events-none lg:overflow-hidden'
-                    : 'lg:w-[360px] xl:w-[400px] lg:ml-6 lg:opacity-100 lg:translate-x-0'
+                    : 'lg:w-[360px] xl:w-[384px] lg:ml-6 lg:opacity-100 lg:translate-x-0'
                 }`}
               >
-                <div className="w-full h-full lg:absolute lg:inset-y-0 lg:left-0 lg:w-[360px] xl:w-[400px]">
+                <div className="w-full h-full lg:absolute lg:inset-y-0 lg:left-0 lg:w-[360px] xl:w-[384px]">
                   <Playlist
                     library={library}
                     currentVideo={currentVideo}
@@ -298,36 +305,45 @@ export function App() {
                 </div>
               </aside>
 
-              {/* Right-edge reopen button when Playlist is collapsed on desktop */}
-              {isPlaylistCollapsed && (
-                <button
-                  type="button"
-                  onClick={() => handleSetPlaylistCollapsed(false)}
-                  className="hidden lg:flex fixed right-0 top-24 z-30 items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-l-2xl glass-panel border border-r-0 border-slate-300/80 dark:border-white/15 shadow-xl text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-sky-600 dark:hover:text-sky-400 hover:pr-3.5 transition-all duration-200 cursor-pointer"
-                  aria-label="Expand playlist"
-                  title={`Show Playlist (${totalCount} videos)`}
-                  data-testid="expand-playlist-button"
-                >
-                  <PanelRightOpen className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
-                  <span>Playlist</span>
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-300 font-mono font-bold">
-                    {totalCount}
-                  </span>
-                </button>
+              {/* Right-edge icon-only reopen button when Playlist is collapsed on desktop (hidden in Theater Mode) */}
+              {isPlaylistCollapsed && !isTheaterActive && (
+                <div className="hidden lg:flex fixed right-3 top-24 z-30">
+                  <Tooltip content="Show Playlist" placement="left">
+                    <button
+                      type="button"
+                      onClick={() => handleSetPlaylistCollapsed(false)}
+                      className="inline-flex items-center justify-center p-2 rounded-xl glass-button shadow-lg text-slate-800 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer"
+                      aria-label="Show Playlist"
+                      data-testid="expand-playlist-button"
+                    >
+                      <PanelRightOpen className="h-4 w-4 shrink-0" />
+                    </button>
+                  </Tooltip>
+                </div>
               )}
             </div>
-          )
-        ) : (
-          <EmptyState
-            onOpenFolder={openFolder}
-            onFallbackSelect={handleFallbackFiles}
-            isFsaSupported={isFsaSupported}
-            isScanning={isScanning}
-            scanCount={scanCount}
-            error={error}
-          />
-        )}
-      </main>
+          ) : (
+            <EmptyState
+              onOpenFolder={openFolder}
+              onFallbackSelect={handleFallbackFiles}
+              isFsaSupported={isFsaSupported}
+              isScanning={isScanning}
+              scanCount={scanCount}
+              error={error}
+            />
+          )}
+        </main>
+
+        {/* Minimal Copyright Footer (hidden in Theater Mode) */}
+        <footer
+          data-testid="app-footer"
+          aria-hidden={isTheaterActive || undefined}
+          className={`w-full py-2 px-4 text-center text-xs text-slate-500 dark:text-slate-400/80 shrink-0 select-none ${
+            isTheaterActive ? 'hidden' : ''
+          }`}
+        >
+          © 2026 Jin Liu · MIT License
+        </footer>
       </div>
     </div>
   );

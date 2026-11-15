@@ -4,11 +4,10 @@ import {
   AlertCircle,
   Film,
   Tv,
-  Minimize2,
-  ListVideo,
 } from 'lucide-react';
 import { VideoItem } from '../types/video';
 import { VideoControls } from './VideoControls';
+import { Tooltip } from './Tooltip';
 
 interface VideoPlayerProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -202,8 +201,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     revealOverlay,
   ]);
 
-  const handleContainerFocusCapture = () => {
-    setIsFocusInside(true);
+  const handleContainerFocusCapture = (e: React.FocusEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    let isKeyboardFocus = false;
+    if (target) {
+      try {
+        isKeyboardFocus = target.matches(':focus-visible');
+      } catch {
+        isKeyboardFocus = false;
+      }
+    }
+    setIsFocusInside(isKeyboardFocus);
     revealOverlay();
   };
 
@@ -314,37 +322,78 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
             {/* Top-Right: Icon-only Theater Mode & Autoplay On/Off */}
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                data-testid="theater-mode-button"
-                onClick={onToggleTheaterMode}
-                aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Theater Mode'}
-                aria-pressed={isTheaterMode}
-                title={isTheaterMode ? 'Exit Theater Mode (Esc)' : 'Theater Mode'}
-                className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                  isTheaterMode
-                    ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
-                    : 'bg-black/60 hover:bg-black/80 text-slate-200 hover:text-white border-white/15'
-                }`}
+              <Tooltip
+                content={isTheaterMode ? 'Exit Theater Mode (Esc)' : 'Enter Theater Mode'}
+                placement="bottom"
+                disabled={!controlsVisible}
               >
-                {isTheaterMode ? <Minimize2 className="w-4 h-4" /> : <Tv className="w-4 h-4" />}
-              </button>
+                <button
+                  type="button"
+                  data-testid="theater-mode-button"
+                  onClick={onToggleTheaterMode}
+                  aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
+                  aria-pressed={isTheaterMode}
+                  className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                    isTheaterMode
+                      ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
+                      : 'bg-black/60 hover:bg-black/80 text-slate-200 hover:text-white border-white/15'
+                  }`}
+                >
+                  <Tv className="w-4 h-4" />
+                </button>
+              </Tooltip>
 
-              <button
-                type="button"
-                data-testid="autoplay-toggle-button"
-                onClick={onToggleAutoplayNext}
-                aria-label={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
-                aria-pressed={autoplayNext}
-                title={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
-                className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                  autoplayNext
-                    ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
-                    : 'bg-black/60 hover:bg-black/80 text-slate-400 hover:text-slate-200 border-white/15'
-                }`}
+              <Tooltip
+                content={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
+                placement="bottom"
+                disabled={!controlsVisible}
               >
-                <ListVideo className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  data-testid="autoplay-toggle-button"
+                  onClick={onToggleAutoplayNext}
+                  aria-label={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
+                  aria-pressed={autoplayNext}
+                  className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                    autoplayNext
+                      ? 'bg-sky-500/25 hover:bg-sky-500/35 text-sky-300 border-sky-400/60 shadow-[0_0_10px_rgba(56,189,248,0.2)]'
+                      : 'bg-black/60 hover:bg-black/80 text-slate-400 hover:text-slate-200 border-white/15'
+                  }`}
+                >
+                  <svg
+                    viewBox="0 0 24 14"
+                    className="w-5 h-3.5 block"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="1"
+                      y="1"
+                      width="22"
+                      height="12"
+                      rx="6"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      fill="currentColor"
+                      fillOpacity={autoplayNext ? 0.22 : 0}
+                    />
+                    <circle
+                      cx={autoplayNext ? 17 : 7}
+                      cy="7"
+                      r="4.2"
+                      fill="currentColor"
+                    />
+                    <path
+                      d={
+                        autoplayNext
+                          ? 'M15.8 5.2L18.8 7L15.8 8.8V5.2Z'
+                          : 'M5.8 5.2L8.8 7L5.8 8.8V5.2Z'
+                      }
+                      fill="#0f172a"
+                    />
+                  </svg>
+                </button>
+              </Tooltip>
             </div>
           </div>
 
