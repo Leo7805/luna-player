@@ -1,5 +1,5 @@
 import { RefObject, useState, useEffect, useRef, useCallback } from 'react';
-import { Play, AlertTriangle, Maximize2, Minimize2, Expand, Shrink } from 'lucide-react';
+import { Play, AlertTriangle, Expand, Shrink } from 'lucide-react';
 import { VideoItem } from '../types/video';
 
 interface VideoPlayerProps {
@@ -10,7 +10,6 @@ interface VideoPlayerProps {
   autoplayBlocked: boolean;
   playerError: string | null;
   isTheaterMode: boolean;
-  onToggleTheaterMode: () => void;
   onLoadedMetadata: () => void;
   onTimeUpdate: () => void;
   onPlay: () => void;
@@ -29,7 +28,6 @@ export function VideoPlayer({
   autoplayBlocked,
   playerError,
   isTheaterMode,
-  onToggleTheaterMode,
   onLoadedMetadata,
   onTimeUpdate,
   onPlay,
@@ -226,21 +224,6 @@ export function VideoPlayer({
               showOverlay ? 'pointer-events-auto' : 'pointer-events-none focus-within:pointer-events-auto'
             }`}
           >
-            {/* Theater Mode Toggle */}
-            <button
-              onClick={onToggleTheaterMode}
-              className="p-2 rounded-xl bg-black/50 hover:bg-black/80 text-slate-100 hover:text-white border border-white/20 backdrop-blur-md transition shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-400"
-              aria-label={isTheaterMode ? 'Exit theater mode' : 'Enter theater mode'}
-              title={isTheaterMode ? 'Exit theater mode' : 'Theater mode'}
-              tabIndex={0}
-            >
-              {isTheaterMode ? (
-                <Minimize2 className="h-4 w-4 text-sky-400" />
-              ) : (
-                <Maximize2 className="h-4 w-4" />
-              )}
-            </button>
-
             {/* Native Fullscreen Toggle */}
             <button
               onClick={handleToggleFullscreen}

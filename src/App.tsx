@@ -91,6 +91,21 @@ export function App() {
     setIsTheaterMode((prev) => !prev);
   };
 
+  useEffect(() => {
+    if (!isTheaterMode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === 'Escape' &&
+        !document.fullscreenElement &&
+        !document.querySelector('[data-testid="extract-audio-modal"]')
+      ) {
+        setIsTheaterMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTheaterMode]);
+
   const handleSetPlaylistCollapsed = (collapsed: boolean) => {
     setIsPlaylistCollapsed(collapsed);
     saveSettings({ playlistCollapsed: collapsed });
@@ -164,7 +179,6 @@ export function App() {
                   autoplayBlocked={autoplayBlocked}
                   playerError={playerError}
                   isTheaterMode={true}
-                  onToggleTheaterMode={toggleTheaterMode}
                   onLoadedMetadata={handleLoadedMetadata}
                   onTimeUpdate={handleTimeUpdate}
                   onPlay={handlePlay}
@@ -219,7 +233,7 @@ export function App() {
           ) : (
             /* --- Normal Split Screen Layout (with collapsible desktop Playlist sidebar) --- */
             <div
-              className="relative flex flex-col lg:flex-row flex-1 items-start w-full gap-6 lg:gap-0"
+              className="relative flex flex-col lg:flex-row lg:items-stretch w-full gap-6 lg:gap-0"
               data-testid="desktop-split-layout"
             >
               {/* Left Column: Video Player & Controls */}
@@ -239,7 +253,6 @@ export function App() {
                   autoplayBlocked={autoplayBlocked}
                   playerError={playerError}
                   isTheaterMode={false}
-                  onToggleTheaterMode={toggleTheaterMode}
                   onLoadedMetadata={handleLoadedMetadata}
                   onTimeUpdate={handleTimeUpdate}
                   onPlay={handlePlay}
@@ -265,17 +278,17 @@ export function App() {
                 />
               </div>
 
-              {/* Right Column: Hierarchical Playlist (Collapsible on lg desktop, stacked on mobile/tablet) */}
+              {/* Right Column: Hierarchical Playlist (Matches Player Column height on lg desktop, stacked on mobile/tablet) */}
               <aside
                 aria-label="Playlist sidebar"
                 data-testid="playlist-sidebar"
-                className={`w-full h-[650px] lg:sticky lg:top-20 shrink-0 lg:transition-all lg:duration-200 ease-out ${
+                className={`relative w-full h-[520px] sm:h-[580px] lg:h-auto shrink-0 lg:transition-all lg:duration-200 ease-out ${
                   isPlaylistCollapsed
                     ? 'lg:w-0 lg:ml-0 lg:opacity-0 lg:translate-x-4 lg:pointer-events-none lg:overflow-hidden'
                     : 'lg:w-[360px] xl:w-[400px] lg:ml-6 lg:opacity-100 lg:translate-x-0'
                 }`}
               >
-                <div className="w-full lg:w-[360px] xl:w-[400px] h-full">
+                <div className="w-full h-full lg:absolute lg:inset-y-0 lg:left-0 lg:w-[360px] xl:w-[400px]">
                   <Playlist
                     library={library}
                     currentVideo={currentVideo}
