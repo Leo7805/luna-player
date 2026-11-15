@@ -1,4 +1,5 @@
-import { Moon, Sun } from 'lucide-react';
+import React from 'react';
+import { Moon, Sun, Settings } from 'lucide-react';
 import { VideoLibrary } from '../types/video';
 import { OpenVideoMode } from '../utils/platform';
 import { Tooltip } from './Tooltip';
@@ -15,6 +16,8 @@ interface HeaderProps {
   isScanning: boolean;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  onOpenSettings: (openedByKeyboard: boolean) => void;
+  settingsButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export function Header({
@@ -27,6 +30,8 @@ export function Header({
   isScanning,
   theme,
   onToggleTheme,
+  onOpenSettings,
+  settingsButtonRef,
 }: HeaderProps) {
 
   return (
@@ -63,6 +68,24 @@ export function Header({
             onFallbackFolderSelect={onFallbackSelect}
             onOpenFilesSelect={onOpenFilesSelect}
           />
+
+          {/* Settings Button */}
+          <Tooltip content="Keyboard & Control Settings" placement="bottom">
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              onClick={(e) => {
+                const openedByKeyboard = e.detail === 0;
+                blurButtonAfterPointerClick(e);
+                onOpenSettings(openedByKeyboard);
+              }}
+              className="glass-button p-2 rounded-xl text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition cursor-pointer shrink-0"
+              aria-label="Keyboard & Control Settings"
+              data-testid="settings-button"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          </Tooltip>
 
           {/* Theme Toggle (Far Right) */}
           <Tooltip

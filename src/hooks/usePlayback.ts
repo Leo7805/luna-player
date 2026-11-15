@@ -10,13 +10,18 @@ import {
   DEFAULT_CONTROL_SETTINGS,
   END_SEEK_OFFSET_SECONDS,
   PLAYBACK_RATE_EPSILON,
+  type ControlSettings,
 } from '../config/controlSettings';
 
 interface UsePlaybackProps {
   library: VideoLibrary | null;
+  controlSettings?: ControlSettings;
 }
 
-export function usePlayback({ library }: UsePlaybackProps) {
+export function usePlayback({
+  library,
+  controlSettings = DEFAULT_CONTROL_SETTINGS,
+}: UsePlaybackProps) {
   const [currentVideo, setCurrentVideo] = useState<VideoItem | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -44,6 +49,8 @@ export function usePlayback({ library }: UsePlaybackProps) {
   mutedRef.current = muted;
   const playbackRateRef = useRef<number>(playbackRate);
   playbackRateRef.current = playbackRate;
+  const controlSettingsRef = useRef<ControlSettings>(controlSettings);
+  controlSettingsRef.current = controlSettings;
   const lastAudibleVolumeRef = useRef<number>(
     volume > DEFAULT_CONTROL_SETTINGS.volume.min
       ? volume
@@ -479,7 +486,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
   }, [seekTo]);
 
   const applyPlaybackRate = useCallback((targetRate: number): number => {
-    const { min, max } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+    const { min, max } = controlSettingsRef.current.playbackRate;
     const rounded = Math.round(Math.min(max, Math.max(min, targetRate)) * 100) / 100;
     const videoEl = videoRef.current;
     if (!videoEl) {
@@ -500,9 +507,17 @@ export function usePlayback({ library }: UsePlaybackProps) {
     }
   }, []);
 
+  // Clamp active playback rate if user narrows min/max speed bounds in Settings
+  useEffect(() => {
+    const { min, max } = controlSettings.playbackRate;
+    if (playbackRateRef.current < min || playbackRateRef.current > max) {
+      applyPlaybackRate(playbackRateRef.current);
+    }
+  }, [controlSettings.playbackRate.min, controlSettings.playbackRate.max, applyPlaybackRate]);
+
   const adjustPlaybackRate = useCallback(
     (direction: -1 | 1): number => {
-      const { step } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+      const { step } = controlSettingsRef.current.playbackRate;
       const currentRate =
         videoRef.current && Number.isFinite(videoRef.current.playbackRate)
           ? videoRef.current.playbackRate
@@ -513,7 +528,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
   );
 
   const toggleMaxPlaybackRate = useCallback((): number => {
-    const { default: defaultRate, max } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+    const { default: defaultRate, max } = controlSettingsRef.current.playbackRate;
     const currentRate =
       videoRef.current && Number.isFinite(videoRef.current.playbackRate)
         ? videoRef.current.playbackRate
@@ -558,7 +573,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
   const adjustVolume = useCallback(
     (direction: -1 | 1): number => {
-      const { step, min, max } = DEFAULT_CONTROL_SETTINGS.volume;
+      const { step, min, max } = controlSettingsRef.current.volume;
       const currentVol =
         videoRef.current && Number.isFinite(videoRef.current.volume)
           ? videoRef.current.volume

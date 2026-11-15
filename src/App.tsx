@@ -8,8 +8,13 @@ import { Playlist } from './components/Playlist';
 import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { Tooltip } from './components/Tooltip';
+import { SettingsModal } from './components/SettingsModal';
 import { loadSettings, saveSettings } from './services/progressStorage';
 import { blurButtonAfterPointerClick } from './utils/shortcuts';
+import {
+  cloneDefaultControlSettings,
+  type ControlSettings,
+} from './config/controlSettings';
 import { VideoLibrary } from './types/video';
 import { PanelRight } from 'lucide-react';
 
@@ -19,6 +24,12 @@ export function App() {
   const [isPlaylistCollapsed, setIsPlaylistCollapsed] = useState<boolean>(
     () => Boolean(loadSettings().playlistCollapsed)
   );
+  const [controlSettings, setControlSettings] = useState<ControlSettings>(
+    () => loadSettings().controls ?? cloneDefaultControlSettings()
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsOpenedByKeyboardRef = useRef(false);
 
   const {
     library,
@@ -75,7 +86,7 @@ export function App() {
     handleVideoError,
     handleEnded,
     handleManualPlay,
-  } = usePlayback({ library });
+  } = usePlayback({ library, controlSettings });
 
   // Remember the last played video ID in settings when video changes
   useEffect(() => {
@@ -157,6 +168,25 @@ export function App() {
     saveSettings({ playlistCollapsed: collapsed });
   };
 
+  const handleOpenSettings = (openedByKeyboard: boolean) => {
+    settingsOpenedByKeyboardRef.current = openedByKeyboard;
+    setIsSettingsOpen(true);
+  };
+
+  const handleCloseSettings = () => {
+    const restoreFocus = settingsOpenedByKeyboardRef.current;
+    settingsOpenedByKeyboardRef.current = false;
+    setIsSettingsOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => settingsButtonRef.current?.focus());
+    }
+  };
+
+  const handleSaveControlSettings = (nextSettings: ControlSettings) => {
+    setControlSettings(nextSettings);
+    saveSettings({ controls: nextSettings });
+  };
+
   const mainStageStyle = {
     '--player-max-h': 'clamp(220px, calc(100dvh - 8.25rem), 760px)',
   } as React.CSSProperties;
@@ -213,6 +243,8 @@ export function App() {
             isScanning={isScanning}
             theme={theme}
             onToggleTheme={toggleTheme}
+            onOpenSettings={handleOpenSettings}
+            settingsButtonRef={settingsButtonRef}
           />
         </div>
 
@@ -274,6 +306,7 @@ export function App() {
                   hasPrevious={hasPrevious}
                   autoplayNext={autoplayNext}
                   isTheaterMode={isTheaterActive}
+                  controlSettings={controlSettings}
                   onToggleTheaterMode={toggleTheaterMode}
                   onToggleAutoplayNext={toggleAutoplayNext}
                   onTogglePlayPause={togglePlayPause}
@@ -369,6 +402,12 @@ export function App() {
         >
           © 2026 Jin Liu · MIT License
         </footer>
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          settings={controlSettings}
+          onSave={handleSaveControlSettings}
+          onClose={handleCloseSettings}
+        />
       </div>
     </div>
   );

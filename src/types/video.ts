@@ -2,6 +2,8 @@
  * Core types for Luna Player
  */
 
+import type { ControlSettings } from '../config/controlSettings';
+
 export interface VideoItem {
   id: string; // Unique within library: relativePath
   name: string; // File name without directory path
@@ -44,6 +46,7 @@ export interface PlayerSettings {
   playlistCollapsed?: boolean;
   lastPlayedId?: string;
   lastLibraryId?: string;
+  controls?: ControlSettings;
 }
 
 /**

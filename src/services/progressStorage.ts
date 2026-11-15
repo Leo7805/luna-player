@@ -1,4 +1,5 @@
 import { PlaybackProgress, PlayerSettings, createVideoStorageKey } from '../types/video';
+import { cloneDefaultControlSettings, sanitizeControlSettings } from '../config/controlSettings';
 
 const PROGRESS_STORAGE_KEY = 'luna_playback_progress_v1';
 const SETTINGS_STORAGE_KEY = 'luna_player_settings_v1';
@@ -93,15 +94,33 @@ export function loadSettings(): PlayerSettings {
     volume: 1,
     muted: false,
     playlistCollapsed: false,
+    controls: cloneDefaultControlSettings(),
   };
 
   try {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return defaultSettings;
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return defaultSettings;
+    }
+
+    const record = parsed as Record<string, unknown>;
     return {
-      ...defaultSettings,
-      ...parsed,
+      autoplayNext:
+        typeof record.autoplayNext === 'boolean' ? record.autoplayNext : defaultSettings.autoplayNext,
+      volume:
+        typeof record.volume === 'number' && Number.isFinite(record.volume)
+          ? Math.max(0, Math.min(1, record.volume))
+          : defaultSettings.volume,
+      muted: typeof record.muted === 'boolean' ? record.muted : defaultSettings.muted,
+      playlistCollapsed:
+        typeof record.playlistCollapsed === 'boolean'
+          ? record.playlistCollapsed
+          : defaultSettings.playlistCollapsed,
+      ...(typeof record.lastPlayedId === 'string' ? { lastPlayedId: record.lastPlayedId } : {}),
+      ...(typeof record.lastLibraryId === 'string' ? { lastLibraryId: record.lastLibraryId } : {}),
+      controls: sanitizeControlSettings(record.controls),
     };
   } catch {
     return defaultSettings;
@@ -111,7 +130,13 @@ export function loadSettings(): PlayerSettings {
 export function saveSettings(settings: Partial<PlayerSettings>): void {
   try {
     const current = loadSettings();
-    const updated = { ...current, ...settings };
+    const updated: PlayerSettings = {
+      ...current,
+      ...settings,
+      controls: settings.controls
+        ? sanitizeControlSettings(settings.controls)
+        : current.controls ?? cloneDefaultControlSettings(),
+    };
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
   } catch {
     // Ignore error

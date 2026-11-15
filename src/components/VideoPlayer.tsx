@@ -9,7 +9,10 @@ import { VideoItem } from '../types/video';
 import { VideoControls } from './VideoControls';
 import { Tooltip } from './Tooltip';
 import { FeedbackHud } from './FeedbackHud';
-import { DEFAULT_CONTROL_SETTINGS } from '../config/controlSettings';
+import {
+  DEFAULT_CONTROL_SETTINGS,
+  type ControlSettings,
+} from '../config/controlSettings';
 import {
   resolveShortcutAction,
   isInteractiveOrEditableTarget,
@@ -43,6 +46,7 @@ interface VideoPlayerProps {
   hasPrevious: boolean;
   autoplayNext: boolean;
   isTheaterMode: boolean;
+  controlSettings?: ControlSettings;
   onToggleTheaterMode: () => void;
   onToggleAutoplayNext: () => void;
   onTogglePlayPause: () => 'play' | 'pause' | null | void;
@@ -86,6 +90,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   hasPrevious,
   autoplayNext,
   isTheaterMode,
+  controlSettings = DEFAULT_CONTROL_SETTINGS,
   onToggleTheaterMode,
   onToggleAutoplayNext,
   onTogglePlayPause,
@@ -211,7 +216,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       e.preventDefault();
       if (resolved.suppressedRepeat) return;
 
-      const { seek } = DEFAULT_CONTROL_SETTINGS;
+      const { seek } = controlSettings;
 
       const handleRelativeSeek = (deltaSeconds: number) => {
         const didSeek = onSeekBy(deltaSeconds);
@@ -322,6 +327,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [
     currentVideo,
+    controlSettings.seek,
     onTogglePlayPause,
     onSeekBy,
     onSeekToStart,
