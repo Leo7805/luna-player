@@ -12,6 +12,7 @@ import { VideoLibrary, VideoItem } from '../types/video';
 import { PlaylistFolder, ExpansionOverride } from './PlaylistFolder';
 import { ExtractAudioDialog } from './ExtractAudioDialog';
 import { Tooltip } from './Tooltip';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface PlaylistProps {
   library: VideoLibrary;
@@ -87,7 +88,10 @@ export function Playlist({
             <Tooltip content="Search videos" placement="bottom">
               <button
                 type="button"
-                onClick={() => setIsSearchOpen((prev) => !prev)}
+                onClick={(e) => {
+                  blurButtonAfterPointerClick(e);
+                  setIsSearchOpen((prev) => !prev);
+                }}
                 className={`inline-flex items-center justify-center p-1.5 rounded-lg transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
                   isFiltered
                     ? 'text-sky-600 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20'
@@ -128,7 +132,10 @@ export function Playlist({
             <Tooltip content={isAllExpanded ? 'Collapse All' : 'Expand All'} placement="bottom">
               <button
                 type="button"
-                onClick={handleToggleExpandAll}
+                onClick={(e) => {
+                  blurButtonAfterPointerClick(e);
+                  handleToggleExpandAll();
+                }}
                 className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                 aria-label={isAllExpanded ? 'Collapse All' : 'Expand All'}
                 data-testid="toggle-expand-all-button"
@@ -145,7 +152,10 @@ export function Playlist({
               <Tooltip content="Hide Playlist" placement="left">
                 <button
                   type="button"
-                  onClick={onCollapseSidebar}
+                  onClick={(e) => {
+                    blurButtonAfterPointerClick(e);
+                    onCollapseSidebar();
+                  }}
                   className="hidden lg:inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
                   aria-label="Hide Playlist"
                   data-testid="collapse-playlist-button"

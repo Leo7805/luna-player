@@ -8,6 +8,7 @@ import {
   resolveShortcutAction,
   isInteractiveOrEditableTarget,
   hasBlockingModalOpen,
+  blurButtonAfterPointerClick,
   type ShortcutKeyEvent,
 } from '../src/utils/shortcuts';
 
@@ -203,5 +204,20 @@ describe('Target and modal guards', () => {
   it('detects blocking modals regardless of focus', () => {
     expect(hasBlockingModalOpen({ querySelector: () => ({}) as Element })).toBe(true);
     expect(hasBlockingModalOpen({ querySelector: () => null })).toBe(false);
+  });
+
+  it('blurs toolbar buttons on pointer click (detail > 0) but preserves focus on keyboard activation (detail === 0)', () => {
+    let blurCalls = 0;
+    const mockButton = {
+      blur: () => {
+        blurCalls += 1;
+      },
+    };
+
+    blurButtonAfterPointerClick({ detail: 1, currentTarget: mockButton });
+    expect(blurCalls).toBe(1);
+
+    blurButtonAfterPointerClick({ detail: 0, currentTarget: mockButton });
+    expect(blurCalls).toBe(1);
   });
 });

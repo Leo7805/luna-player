@@ -131,3 +131,17 @@ export function hasBlockingModalOpen(root: Pick<Document, 'querySelector'> = doc
     root.querySelector('[role="dialog"], [aria-modal="true"], [data-testid="extract-audio-modal"]')
   );
 }
+
+/**
+ * Blurs a button after a pointer click (detail > 0) so Space/Enter continue
+ * controlling playback instead of re-activating the button, while preserving
+ * native keyboard activation (detail === 0) for Tab users.
+ */
+export function blurButtonAfterPointerClick(event: {
+  detail: number;
+  currentTarget: { blur: () => void };
+}): void {
+  if (event.detail > 0) {
+    event.currentTarget.blur();
+  }
+}

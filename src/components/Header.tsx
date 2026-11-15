@@ -3,6 +3,7 @@ import { VideoLibrary } from '../types/video';
 import { OpenVideoMode } from '../utils/platform';
 import { Tooltip } from './Tooltip';
 import { OpenVideosControl } from './OpenVideosControl';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface HeaderProps {
   library: VideoLibrary | null;
@@ -70,7 +71,10 @@ export function Header({
           >
             <button
               type="button"
-              onClick={onToggleTheme}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onToggleTheme();
+              }}
               className="glass-button p-2 rounded-xl text-slate-800 dark:text-slate-200 hover:text-sky-700 dark:hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer shrink-0"
               aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               data-testid="theme-toggle-button"
