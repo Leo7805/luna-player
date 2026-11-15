@@ -9,6 +9,10 @@ import {
   Loader2,
   ShieldCheck,
   Ban,
+  Copy,
+  Check,
+  ChevronRight,
+  Info,
 } from 'lucide-react';
 import { VideoLibrary } from '../types/video';
 import {
@@ -20,6 +24,7 @@ import {
 import {
   BatchExtractionProgress,
   BrowserOutputDirectoryWriter,
+  FileExtractionRecord,
   checkIsSameAsSourceDirectory,
   isDirectoryWriteSupported,
   promptOutputDirectory,
@@ -32,7 +37,27 @@ interface ExtractAudioDialogProps {
   library: VideoLibrary;
 }
 
-const MAX_VISIBLE_NOTABLE_RECORDS = 20;
+const MAX_VISIBLE_FAILED_RECORDS = 20;
+const MAX_VISIBLE_SKIPPED_RECORDS = 20;
+
+function formatFailedRecordForClipboard(rec: FileExtractionRecord): string {
+  const lines = [
+    `File: ${rec.relativePath}`,
+    `Output: ${rec.outputRelativePath}`,
+  ];
+  if (rec.stageLabel || rec.stage) {
+    lines.push(`Stage: ${rec.stageLabel ? `${rec.stageLabel} (${rec.stage})` : rec.stage}`);
+  }
+  lines.push(`Error Name: ${rec.errorName || 'Error'}`);
+  lines.push(`Error Message: ${rec.errorMessage || rec.reason || 'Unknown error'}`);
+  if (rec.friendlyExplanation) {
+    lines.push(`Explanation: ${rec.friendlyExplanation}`);
+  }
+  if (rec.technicalDetails) {
+    lines.push(`Technical Details:\n${rec.technicalDetails}`);
+  }
+  return lines.join('\n');
+}
 
 export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDialogProps) {
   const [format, setFormat] = useState<AudioOutputFormat>('mp3');
@@ -40,9 +65,11 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
   const [isSameFolderWarning, setIsSameFolderWarning] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [progress, setProgress] = useState<BatchExtractionProgress | null>(null);
+  const [copiedRecordKey, setCopiedRecordKey] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const dialogPanelRef = useRef<HTMLDivElement | null>(null);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fsaWriteSupported = isDirectoryWriteSupported();
   const totalVideos = library.flatPlaylist.length;
@@ -54,6 +81,9 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
       }
     };
   }, []);
@@ -158,6 +188,33 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
     onClose();
   };
 
+  const handleCopyFailedRecord = async (rec: FileExtractionRecord, recordKey: string) => {
+    const text = formatFailedRecordForClipboard(rec);
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedRecordKey(recordKey);
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+      }
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopiedRecordKey((prev) => (prev === recordKey ? null : prev));
+      }, 2000);
+    } catch {
+      // Ignore clipboard permission errors silently
+    }
+  };
+
   const processedCount = progress
     ? progress.completedCount + progress.skippedCount + progress.failedCount
     : 0;
@@ -166,11 +223,17 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       ? Math.min(100, Math.round((processedCount / progress.totalFiles) * 100))
       : 0;
 
-  const notableRecords = progress
-    ? progress.records.filter((r) => r.outcome === 'failed' || r.outcome === 'skipped')
+  const failedRecords = progress
+    ? progress.records.filter((r) => r.outcome === 'failed')
     : [];
-  const visibleNotableRecords = notableRecords.slice(0, MAX_VISIBLE_NOTABLE_RECORDS);
-  const hiddenNotableCount = Math.max(0, notableRecords.length - visibleNotableRecords.length);
+  const visibleFailedRecords = failedRecords.slice(0, MAX_VISIBLE_FAILED_RECORDS);
+  const hiddenFailedCount = Math.max(0, failedRecords.length - visibleFailedRecords.length);
+
+  const skippedRecords = progress
+    ? progress.records.filter((r) => r.outcome === 'skipped')
+    : [];
+  const visibleSkippedRecords = skippedRecords.slice(0, MAX_VISIBLE_SKIPPED_RECORDS);
+  const hiddenSkippedCount = Math.max(0, skippedRecords.length - visibleSkippedRecords.length);
 
   const dialogContent = (
     <div
@@ -465,46 +528,160 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
               {/* Error Banner if fatal batch error */}
               {progress.errorMessage && (
                 <div
-                  className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px] break-words line-clamp-3"
-                  title={progress.errorMessage}
+                  className="p-2.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px] break-words whitespace-normal"
                   role="alert"
                 >
                   {progress.errorMessage}
                 </div>
               )}
 
-              {/* Per-file skipped / failure details (rendered inline within the single scrollable body) */}
-              {!isRunning && visibleNotableRecords.length > 0 && (
-                <div className="pt-1 space-y-1 text-[11px] min-w-0">
-                  <p className="font-semibold text-slate-700 dark:text-slate-300">
-                    Details ({notableRecords.length}):
+              {/* Failed files details (rendered inline within the single scrollable body) */}
+              {!isRunning && visibleFailedRecords.length > 0 && (
+                <div
+                  className="pt-1.5 space-y-2 text-[11px] min-w-0"
+                  data-testid="failed-files-section"
+                >
+                  <p
+                    className="font-semibold text-rose-700 dark:text-rose-300"
+                    data-testid="failed-files-heading"
+                  >
+                    Failed files ({failedRecords.length}):
                   </p>
-                  {visibleNotableRecords.map((rec, idx) => (
+                  {visibleFailedRecords.map((rec, idx) => {
+                    const recordKey = `${rec.relativePath}-${idx}`;
+                    const isCopied = copiedRecordKey === recordKey;
+                    const errorName = rec.errorName || 'Error';
+                    const errorMessage = rec.errorMessage || rec.reason || 'Unknown error';
+                    const technicalText =
+                      rec.technicalDetails ||
+                      `${errorName}: ${errorMessage}`;
+
+                    return (
+                      <div
+                        key={recordKey}
+                        className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-rose-500/[0.06] dark:bg-rose-500/[0.08] border border-rose-500/25 dark:border-rose-400/20 text-slate-700 dark:text-slate-300 min-w-0"
+                        data-testid="failed-file-card"
+                      >
+                        {/* Header row: Full wrapped relative path + Copy error action */}
+                        <div className="flex items-start justify-between gap-2 min-w-0">
+                          <span
+                            className="font-mono font-semibold text-slate-900 dark:text-slate-100 break-all sm:break-words whitespace-normal leading-snug min-w-0 flex-1"
+                            data-testid="failed-file-path"
+                          >
+                            {rec.relativePath}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyFailedRecord(rec, recordKey)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-200/80 hover:bg-slate-300/80 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-slate-200 text-[10px] font-semibold shrink-0 transition cursor-pointer"
+                            data-testid="copy-error-button"
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3 w-3" />
+                                <span>Copy error</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Badges row: Error Name + Failure Stage */}
+                        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-500/15 dark:bg-rose-500/25 border border-rose-500/30 font-mono text-[10px] font-bold text-rose-800 dark:text-rose-200 break-all"
+                            data-testid="failed-file-error-name"
+                          >
+                            {errorName}
+                          </span>
+                          {rec.stageLabel && (
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-white/10 text-[10px] font-medium text-slate-700 dark:text-slate-300"
+                              data-testid="failed-file-stage"
+                            >
+                              Stage: {rec.stageLabel}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Error Message (displayed separately from Error Name, fully wrapped) */}
+                        <p
+                          className="text-rose-700 dark:text-rose-300 break-words whitespace-normal leading-relaxed"
+                          data-testid="failed-file-error-message"
+                        >
+                          {errorMessage}
+                        </p>
+
+                        {/* Friendly understandable explanation when known */}
+                        {rec.friendlyExplanation && (
+                          <div
+                            className="flex items-start gap-1.5 p-2 rounded-lg bg-slate-200/70 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 text-[10.5px] leading-relaxed min-w-0"
+                            data-testid="failed-file-explanation"
+                          >
+                            <Info className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                            <span className="min-w-0 break-words whitespace-normal">
+                              {rec.friendlyExplanation}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Expandable Technical details section */}
+                        <details
+                          className="group pt-0.5 min-w-0"
+                          data-testid="failed-file-technical-details"
+                        >
+                          <summary className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 cursor-pointer select-none list-none">
+                            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90 shrink-0" />
+                            <span>Technical details</span>
+                          </summary>
+                          <pre
+                            className="mt-1.5 p-2 rounded-lg bg-slate-900/90 dark:bg-black/50 text-slate-100 font-mono text-[10px] leading-relaxed whitespace-pre-wrap break-words overflow-x-hidden"
+                            data-testid="failed-file-technical-pre"
+                          >
+                            {technicalText}
+                          </pre>
+                        </details>
+                      </div>
+                    );
+                  })}
+                  {hiddenFailedCount > 0 && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-0.5">
+                      + {hiddenFailedCount} more failed {hiddenFailedCount === 1 ? 'file' : 'files'}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Skipped files details (if any files were skipped) */}
+              {!isRunning && visibleSkippedRecords.length > 0 && (
+                <div
+                  className="pt-1 space-y-1 text-[11px] min-w-0"
+                  data-testid="skipped-files-section"
+                >
+                  <p className="font-semibold text-amber-800 dark:text-amber-300">
+                    Skipped files ({skippedRecords.length}):
+                  </p>
+                  {visibleSkippedRecords.map((rec, idx) => (
                     <div
                       key={`${rec.relativePath}-${idx}`}
-                      className="flex flex-col gap-0.5 p-1.5 rounded-lg bg-slate-200/50 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400 min-w-0"
+                      className="flex flex-col gap-0.5 p-2 rounded-lg bg-slate-200/50 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400 min-w-0"
                     >
-                      <span
-                        className="truncate font-mono font-medium text-slate-800 dark:text-slate-200"
-                        title={rec.relativePath}
-                      >
+                      <span className="font-mono font-medium text-slate-800 dark:text-slate-200 break-all sm:break-words whitespace-normal">
                         {rec.relativePath}
                       </span>
-                      <span
-                        className={`truncate ${
-                          rec.outcome === 'failed'
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-amber-700 dark:text-amber-300'
-                        }`}
-                        title={rec.reason || rec.outcome}
-                      >
-                        {rec.reason || rec.outcome}
+                      <span className="text-amber-700 dark:text-amber-300 break-words whitespace-normal">
+                        {rec.reason || 'Skipped'}
                       </span>
                     </div>
                   ))}
-                  {hiddenNotableCount > 0 && (
+                  {hiddenSkippedCount > 0 && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-0.5">
-                      + {hiddenNotableCount} more {hiddenNotableCount === 1 ? 'item' : 'items'}
+                      + {hiddenSkippedCount} more skipped {hiddenSkippedCount === 1 ? 'file' : 'files'}
                     </p>
                   )}
                 </div>

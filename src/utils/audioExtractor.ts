@@ -536,3 +536,258 @@ export function classifyFfmpegError(logs: string[], error?: unknown): string {
 
   return 'Audio conversion failed for this video.';
 }
+
+export type ExtractionFailureStage =
+  | 'reading_source'
+  | 'mounting_input'
+  | 'running_ffmpeg'
+  | 'creating_directory'
+  | 'writing_output';
+
+export const EXTRACTION_STAGE_LABELS: Record<ExtractionFailureStage, string> = {
+  reading_source: 'Reading the source video',
+  mounting_input: 'Mounting or accessing FFmpeg input',
+  running_ffmpeg: 'Running FFmpeg',
+  creating_directory: 'Creating output directories',
+  writing_output: 'Writing or closing the output file',
+};
+
+export interface StructuredExtractionErrorInfo {
+  stage: ExtractionFailureStage;
+  stageLabel: string;
+  errorName: string;
+  errorMessage: string;
+  reason: string;
+  friendlyExplanation?: string;
+  technicalDetails: string;
+}
+
+/**
+ * Error wrapper that preserves the exact failure stage, original DOMException/Error name
+ * and untruncated message, and optional FFmpeg stderr logs.
+ */
+export class ExtractionStageError extends Error {
+  public readonly stage: ExtractionFailureStage;
+  public readonly errorName: string;
+  public readonly originalMessage: string;
+  public readonly logs: string[];
+
+  constructor(
+    stage: ExtractionFailureStage,
+    cause: unknown,
+    options?: {
+      logs?: string[];
+      overrideMessage?: string;
+      overrideErrorName?: string;
+    }
+  ) {
+    const parsed = extractOriginalErrorNameAndMessage(cause);
+    const errorName = options?.overrideErrorName || parsed.errorName;
+    const originalMessage = options?.overrideMessage || parsed.errorMessage;
+    super(originalMessage);
+    this.name = errorName;
+    this.stage = stage;
+    this.errorName = errorName;
+    this.originalMessage = originalMessage;
+    this.logs = options?.logs ? [...options.logs] : [];
+  }
+}
+
+/**
+ * Extracts the original error name (such as DOMException `InvalidStateError`) and full
+ * unmodified message from an Error, DOMException, or worker string (`"InvalidStateError: ..."`).
+ */
+export function extractOriginalErrorNameAndMessage(err: unknown): {
+  errorName: string;
+  errorMessage: string;
+} {
+  if (err instanceof ExtractionStageError) {
+    return {
+      errorName: err.errorName,
+      errorMessage: err.originalMessage,
+    };
+  }
+
+  if (err instanceof Error || (typeof DOMException !== 'undefined' && err instanceof DOMException)) {
+    const rawName = (err as Error).name?.trim() || 'Error';
+    const rawMsg = (err as Error).message?.trim() || rawName;
+    // Check if message itself begins with a serialized DOMException/Error prefix from worker
+    const prefixMatch = rawMsg.match(/^([A-Z][A-Za-z0-9_]*Error):\s*(.+)$/s);
+    if (prefixMatch && (rawName === 'Error' || rawName === prefixMatch[1])) {
+      return {
+        errorName: prefixMatch[1],
+        errorMessage: prefixMatch[2].trim(),
+      };
+    }
+    return {
+      errorName: rawName,
+      errorMessage: rawMsg,
+    };
+  }
+
+  if (typeof err === 'string') {
+    const trimmed = err.trim();
+    const prefixMatch = trimmed.match(/^([A-Z][A-Za-z0-9_]*Error):\s*(.+)$/s);
+    if (prefixMatch) {
+      return {
+        errorName: prefixMatch[1],
+        errorMessage: prefixMatch[2].trim(),
+      };
+    }
+    return {
+      errorName: 'Error',
+      errorMessage: trimmed || 'Unknown error occurred.',
+    };
+  }
+
+  if (err && typeof err === 'object') {
+    const maybeName =
+      typeof (err as { name?: unknown }).name === 'string'
+        ? (err as { name: string }).name.trim()
+        : 'Error';
+    const maybeMsg =
+      typeof (err as { message?: unknown }).message === 'string'
+        ? (err as { message: string }).message.trim()
+        : String(err);
+    return {
+      errorName: maybeName || 'Error',
+      errorMessage: maybeMsg || 'Unknown error occurred.',
+    };
+  }
+
+  return {
+    errorName: 'Error',
+    errorMessage: 'Unknown error occurred.',
+  };
+}
+
+/**
+ * Returns a short, understandable explanation when the error type or message is known.
+ */
+export function getFriendlyErrorExplanation(
+  errorName: string,
+  errorMessage: string,
+  stage: ExtractionFailureStage
+): string | undefined {
+  const nameLower = errorName.toLowerCase();
+  const msgLower = errorMessage.toLowerCase();
+
+  if (
+    nameLower === 'invalidstateerror' ||
+    msgLower.includes('state cached in an interface object') ||
+    msgLower.includes('state had changed since it was read from disk')
+  ) {
+    if (stage === 'writing_output' || stage === 'creating_directory') {
+      return 'The output file or folder metadata on disk changed while the browser was saving the file (often caused by OS indexing, cloud sync, or external file activity). Running extraction again will retry only this missing file.';
+    }
+    return 'The source video file metadata on disk changed after the browser cached its file handle (for example, due to background indexing, cloud sync, or external edits). Running extraction again or re-opening the folder will refresh the file state.';
+  }
+
+  if (nameLower === 'notreadableerror' || msgLower.includes('could not be read')) {
+    return 'The browser could not read or write the file on disk. Another program may be locking the file, or disk access was temporarily interrupted.';
+  }
+
+  if (nameLower === 'notfounderror') {
+    return 'The source file or target directory could not be found on disk. It may have been moved, renamed, or deleted.';
+  }
+
+  if (nameLower === 'quotaexceedederror' || msgLower.includes('quota') || msgLower.includes('disk full')) {
+    return 'There is not enough free disk space or browser storage quota to write the output audio file.';
+  }
+
+  if (
+    nameLower === 'nomodificationallowederror' ||
+    nameLower === 'invalidmodificationerror'
+  ) {
+    return 'The target output file or directory is locked or read-only and could not be modified.';
+  }
+
+  if (msgLower.includes('no audio track found')) {
+    return 'This video file contains video frames only and does not have an audio stream to extract.';
+  }
+
+  if (
+    nameLower === 'runtimeerror' ||
+    nameLower === 'rangeerror' ||
+    msgLower.includes('out of memory') ||
+    msgLower.includes('memory access out of bounds')
+  ) {
+    return 'The in-browser WebAssembly audio encoder encountered a memory or runtime limit while processing this video.';
+  }
+
+  if (msgLower.includes('corrupted or unsupported media container')) {
+    return 'The media container header could not be parsed or the video file is incomplete.';
+  }
+
+  if (msgLower.includes('unsupported audio codec')) {
+    return 'The source video uses an audio codec that is not supported by the local FFmpeg WebAssembly build.';
+  }
+
+  return undefined;
+}
+
+/**
+ * Builds complete structured diagnostic metadata for a failed file conversion.
+ */
+export function describeExtractionError(
+  err: unknown,
+  defaultStage: ExtractionFailureStage,
+  context?: {
+    relativePath?: string;
+    outputRelativePath?: string;
+    logs?: string[];
+  }
+): StructuredExtractionErrorInfo {
+  const stage = err instanceof ExtractionStageError ? err.stage : defaultStage;
+  const stageLabel = EXTRACTION_STAGE_LABELS[stage];
+  const logs =
+    err instanceof ExtractionStageError && err.logs.length > 0
+      ? err.logs
+      : context?.logs ?? [];
+
+  let { errorName, errorMessage } = extractOriginalErrorNameAndMessage(err);
+
+  // If the error was a generic Error from FFmpeg non-zero exit, label it clearly
+  if (errorName === 'Error' && stage === 'running_ffmpeg') {
+    if (errorMessage.toLowerCase().includes('webassembly error')) {
+      errorName = 'RuntimeError';
+    } else {
+      errorName = 'FFmpegEncodingError';
+    }
+  } else if (errorName === 'Error' && stage === 'reading_source') {
+    errorName = 'SourceFileError';
+  }
+
+  const friendlyExplanation = getFriendlyErrorExplanation(errorName, errorMessage, stage);
+
+  const detailLines: string[] = [];
+  if (context?.relativePath) {
+    detailLines.push(`Source file: ${context.relativePath}`);
+  }
+  if (context?.outputRelativePath) {
+    detailLines.push(`Target output: ${context.outputRelativePath}`);
+  }
+  detailLines.push(`Failure stage: ${stageLabel} (${stage})`);
+  detailLines.push(`Error name: ${errorName}`);
+  detailLines.push(`Original error: ${errorMessage}`);
+
+  if (logs.length > 0) {
+    const tailLogs = logs
+      .slice(-15)
+      .map((l) => sanitizeDiagnosticLine(l))
+      .filter(Boolean);
+    if (tailLogs.length > 0) {
+      detailLines.push(`FFmpeg logs:\n${tailLogs.join('\n')}`);
+    }
+  }
+
+  return {
+    stage,
+    stageLabel,
+    errorName,
+    errorMessage,
+    reason: errorMessage,
+    friendlyExplanation,
+    technicalDetails: detailLines.join('\n'),
+  };
+}

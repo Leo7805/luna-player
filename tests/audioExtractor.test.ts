@@ -2,10 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   AUDIO_FORMAT_CONFIGS,
   MAX_SOURCE_VIDEO_SIZE_BYTES,
+  ExtractionStageError,
   buildFfmpegArgs,
   buildOutputFileName,
   buildOutputPlan,
   classifyFfmpegError,
+  describeExtractionError,
   validateRelativePath,
   validateVideoFileSize,
 } from '../src/utils/audioExtractor';
@@ -227,6 +229,28 @@ describe('audioExtractor utilities', () => {
         'Audio conversion failed: Invalid channel layout 5.1(side) for specified mapping family -1.'
       );
     });
+
+    it('preserves DOMException name, full message, stage, and friendly explanation for InvalidStateError', () => {
+      const domErr = new DOMException(
+        'An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk.',
+        'InvalidStateError'
+      );
+      const staged = new ExtractionStageError('reading_source', domErr);
+      const info = describeExtractionError(staged, 'reading_source');
+
+      expect(info.errorName).toBe('InvalidStateError');
+      expect(info.errorMessage).toBe(
+        'An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk.'
+      );
+      expect(info.stage).toBe('reading_source');
+      expect(info.stageLabel).toBe('Reading the source video');
+      expect(info.friendlyExplanation).toContain('cached its file handle');
+      expect(info.technicalDetails).toContain('Failure stage: Reading the source video (reading_source)');
+      expect(info.technicalDetails).toContain('Error name: InvalidStateError');
+      expect(info.technicalDetails).toContain(
+        'An operation that depends on state cached in an interface object was made'
+      );
+    });
   });
 });
 
@@ -304,12 +328,104 @@ describe('runBatchAudioExtraction', () => {
     expect(writer.writtenFiles.has('Clip 1.webm')).toBe(true);
     expect(writer.writtenFiles.has('NoAudio.webm')).toBe(false);
     expect(writer.writtenFiles.has('Clip 3.webm')).toBe(true);
-    expect(result.records.find((r) => r.relativePath === 'NoAudio.mp4')).toEqual({
+    expect(result.records.find((r) => r.relativePath === 'NoAudio.mp4')).toMatchObject({
       relativePath: 'NoAudio.mp4',
       outputRelativePath: 'NoAudio.webm',
       outcome: 'failed',
       reason: 'No audio track found in this video.',
+      errorName: 'FFmpegEncodingError',
+      errorMessage: 'No audio track found in this video.',
+      stage: 'running_ffmpeg',
+      stageLabel: 'Running FFmpeg',
     });
+  });
+
+  it('refreshes the File via FileSystemFileHandle.getFile() before conversion when a handle exists', async () => {
+    const staleFile = new File([new Uint8Array([0])], '5-14.Move.to.Music.mp4', {
+      type: 'video/mp4',
+    });
+    const freshFile = new File([new Uint8Array([1, 2, 3, 4])], '5-14.Move.to.Music.mp4', {
+      type: 'video/mp4',
+    });
+    const getFileMock = vi.fn().mockResolvedValue(freshFile);
+
+    const video: VideoItem = {
+      id: '第5季52集部分带英文字幕/5-14.Move.to.Music.mp4',
+      name: '5-14.Move.to.Music.mp4',
+      relativePath: '第5季52集部分带英文字幕/5-14.Move.to.Music.mp4',
+      size: 4,
+      lastModified: 1700000000000,
+      file: staleFile,
+      handle: {
+        kind: 'file',
+        name: '5-14.Move.to.Music.mp4',
+        getFile: getFileMock,
+      } as unknown as FileSystemFileHandle,
+    };
+
+    const writer = new InMemoryOutputWriter();
+    let passedFile: File | null = null;
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockImplementation(async (file: File) => {
+        passedFile = file;
+        return { data: new Uint8Array([9, 9]), args: [] };
+      }),
+      terminate: vi.fn(),
+    };
+
+    const result = await runBatchAudioExtraction({
+      videos: [video],
+      format: 'webm',
+      writer,
+      encoder,
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.completedCount).toBe(1);
+    expect(getFileMock).toHaveBeenCalledTimes(1);
+    expect(passedFile).toBe(freshFile);
+  });
+
+  it('records InvalidStateError with exact DOMException name, message, and stage when a file fails', async () => {
+    const video = makeVideo(
+      '第5季52集部分带英文字幕/5-14.Move.to.Music.With.Subtitles.Episode.14.mp4'
+    );
+    const writer = new InMemoryOutputWriter();
+    const invalidStateDomError = new DOMException(
+      'An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk.',
+      'InvalidStateError'
+    );
+
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi
+        .fn()
+        .mockRejectedValueOnce(new ExtractionStageError('mounting_input', invalidStateDomError)),
+      terminate: vi.fn(),
+    };
+
+    const result = await runBatchAudioExtraction({
+      videos: [video],
+      format: 'webm',
+      writer,
+      encoder,
+    });
+
+    expect(result.failedCount).toBe(1);
+    const failedRec = result.records[0];
+    expect(failedRec.outcome).toBe('failed');
+    expect(failedRec.relativePath).toBe(
+      '第5季52集部分带英文字幕/5-14.Move.to.Music.With.Subtitles.Episode.14.mp4'
+    );
+    expect(failedRec.errorName).toBe('InvalidStateError');
+    expect(failedRec.errorMessage).toBe(
+      'An operation that depends on state cached in an interface object was made but the state had changed since it was read from disk.'
+    );
+    expect(failedRec.stage).toBe('mounting_input');
+    expect(failedRec.stageLabel).toBe('Mounting or accessing FFmpeg input');
+    expect(failedRec.friendlyExplanation).toContain('cached its file handle');
+    expect(failedRec.technicalDetails).toContain('Error name: InvalidStateError');
   });
 
   it('stops the batch immediately when FFmpeg initialization fails globally instead of failing all videos', async () => {

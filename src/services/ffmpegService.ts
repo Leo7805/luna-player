@@ -3,6 +3,9 @@ import {
   AudioOutputFormat,
   buildFfmpegArgs,
   classifyFfmpegError,
+  ExtractionFailureStage,
+  ExtractionStageError,
+  extractOriginalErrorNameAndMessage,
   splitFileName,
 } from '../utils/audioExtractor';
 
@@ -16,7 +19,8 @@ export interface AudioEncoderAdapter {
   extractAudio(
     file: File,
     format: AudioOutputFormat,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    refreshFile?: () => Promise<File>
   ): Promise<FfmpegEncodeResult>;
   terminate(): void;
 }
@@ -64,6 +68,16 @@ function isFatalWasmCrash(err: unknown): boolean {
     text.includes('runtimeerror') ||
     text.includes('unreachable') ||
     text.includes('terminated')
+  );
+}
+
+function isFileAccessDomExceptionName(name: string): boolean {
+  return (
+    name === 'InvalidStateError' ||
+    name === 'NotReadableError' ||
+    name === 'NotFoundError' ||
+    name === 'SecurityError' ||
+    name === 'NotAllowedError'
   );
 }
 
@@ -125,7 +139,10 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
           signal ? { signal } : undefined
         );
       } catch (directLoadErr) {
-        if (signal?.aborted || (directLoadErr instanceof DOMException && directLoadErr.name === 'AbortError')) {
+        if (
+          signal?.aborted ||
+          (directLoadErr instanceof DOMException && directLoadErr.name === 'AbortError')
+        ) {
           instance.terminate();
           throw new DOMException('Operation was aborted', 'AbortError');
         }
@@ -171,7 +188,8 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
   async extractAudio(
     file: File,
     format: AudioOutputFormat,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    refreshFile?: () => Promise<File>
   ): Promise<FfmpegEncodeResult> {
     await this.initialize(signal);
 
@@ -199,10 +217,19 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         throw firstErr;
       }
 
-      // Fallback attempt: reinitialize if worker crashed, use MEMFS writeFile,
-      // and for WebM use mono (-ac 1) if stereo Opus encountered a codec/WASM error.
+      // If a FileSystemFileHandle is available, refresh the File snapshot via getFile()
+      // before reading into MEMFS in case the previous File object became stale on disk.
+      let fallbackFile = file;
+      if (refreshFile) {
+        try {
+          fallbackFile = await refreshFile();
+        } catch (refreshErr) {
+          throw new ExtractionStageError('reading_source', refreshErr);
+        }
+      }
+
       await this.initialize(signal);
-      return await this.runExtractionAttempt(file, format, signal, {
+      return await this.runExtractionAttempt(fallbackFile, format, signal, {
         preferWorkerFs: false,
         channels: format === 'webm' ? 1 : 2,
       });
@@ -232,6 +259,7 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
 
     let usedWorkerFs = false;
     let wroteMemFsInput = false;
+    let activeStage: ExtractionFailureStage = 'mounting_input';
     const logs: string[] = [];
 
     const onLog = ({ message }: { message: string }) => {
@@ -260,24 +288,38 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
 
       if (!usedWorkerFs) {
         inputVirtualPath = `/input_${jobId}.${safeSrcExt}`;
-        const buffer = await file.arrayBuffer();
+        let buffer: ArrayBuffer;
+        try {
+          buffer = await file.arrayBuffer();
+        } catch (readErr) {
+          throw new ExtractionStageError('reading_source', readErr, { logs });
+        }
         if (signal?.aborted) {
           throw new DOMException('Operation was aborted', 'AbortError');
         }
-        await ffmpeg.writeFile(
-          inputVirtualPath,
-          new Uint8Array(buffer),
-          signal ? { signal } : undefined
-        );
-        wroteMemFsInput = true;
+        try {
+          await ffmpeg.writeFile(
+            inputVirtualPath,
+            new Uint8Array(buffer),
+            signal ? { signal } : undefined
+          );
+          wroteMemFsInput = true;
+        } catch (writeVirtualErr) {
+          throw new ExtractionStageError('mounting_input', writeVirtualErr, { logs });
+        }
       }
 
+      activeStage = 'running_ffmpeg';
       const args = buildFfmpegArgs(inputVirtualPath, outputVirtualPath, format, options.channels);
       const exitCode = await ffmpeg.exec(args, -1, signal ? { signal } : undefined);
 
       if (exitCode !== 0) {
         const friendlyReason = classifyFfmpegError(logs);
-        throw new Error(friendlyReason);
+        throw new ExtractionStageError('running_ffmpeg', new Error(friendlyReason), {
+          logs,
+          overrideErrorName: 'FFmpegEncodingError',
+          overrideMessage: friendlyReason,
+        });
       }
 
       const rawOutput = await ffmpeg.readFile(
@@ -292,7 +334,15 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
           : new TextEncoder().encode(String(rawOutput));
 
       if (!outputBytes || outputBytes.byteLength === 0) {
-        throw new Error('Encoded audio output was empty.');
+        throw new ExtractionStageError(
+          'running_ffmpeg',
+          new Error('Encoded audio output was empty.'),
+          {
+            logs,
+            overrideErrorName: 'FFmpegEncodingError',
+            overrideMessage: 'Encoded audio output was empty.',
+          }
+        );
       }
 
       return {
@@ -309,12 +359,30 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         this.terminate();
       }
 
-      if (err instanceof Error && err.message === 'Encoded audio output was empty.') {
+      if (err instanceof ExtractionStageError) {
         throw err;
       }
 
+      const parsed = extractOriginalErrorNameAndMessage(err);
+      // If WORKERFS FileReaderSync threw a DOMException (e.g., InvalidStateError or NotReadableError)
+      // inside the worker while reading the mounted File, preserve the exact DOMException name
+      // and full message and attribute it to mounting/accessing the FFmpeg input.
+      if (isFileAccessDomExceptionName(parsed.errorName)) {
+        const stage: ExtractionFailureStage = usedWorkerFs ? 'mounting_input' : activeStage;
+        throw new ExtractionStageError(stage, err, {
+          logs,
+          overrideErrorName: parsed.errorName,
+          overrideMessage: parsed.errorMessage,
+        });
+      }
+
       const classified = classifyFfmpegError(logs, err);
-      throw new Error(classified);
+      throw new ExtractionStageError(activeStage, err, {
+        logs,
+        overrideErrorName:
+          parsed.errorName !== 'Error' ? parsed.errorName : 'FFmpegEncodingError',
+        overrideMessage: classified,
+      });
     } finally {
       ffmpeg.off('log', onLog);
 

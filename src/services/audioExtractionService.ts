@@ -2,6 +2,9 @@ import { VideoItem, VideoLibrary } from '../types/video';
 import {
   AudioOutputFormat,
   buildOutputPlan,
+  describeExtractionError,
+  ExtractionFailureStage,
+  ExtractionStageError,
   MAX_SOURCE_VIDEO_SIZE_BYTES,
   validateVideoFileSize,
 } from '../utils/audioExtractor';
@@ -24,6 +27,12 @@ export interface FileExtractionRecord {
   outputRelativePath: string;
   outcome: 'completed' | 'skipped' | 'failed';
   reason?: string;
+  errorName?: string;
+  errorMessage?: string;
+  friendlyExplanation?: string;
+  stage?: ExtractionFailureStage;
+  stageLabel?: string;
+  technicalDetails?: string;
 }
 
 export interface BatchExtractionProgress {
@@ -150,7 +159,10 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
     let current = this.rootHandle;
     for (const segment of directoryParts) {
       if (!segment || segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\')) {
-        throw new Error(`Invalid directory segment: "${segment}"`);
+        throw new ExtractionStageError(
+          'creating_directory',
+          new Error(`Invalid directory segment: "${segment}"`)
+        );
       }
       try {
         current = await current.getDirectoryHandle(segment, { create });
@@ -158,7 +170,7 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
         if (!create && err instanceof DOMException && err.name === 'NotFoundError') {
           return null;
         }
-        throw err;
+        throw new ExtractionStageError('creating_directory', err);
       }
     }
     return current;
@@ -176,47 +188,68 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
       if (err instanceof DOMException && err.name === 'NotFoundError') {
         return false;
       }
-      throw err;
+      if (err instanceof ExtractionStageError) {
+        throw err;
+      }
+      throw new ExtractionStageError('writing_output', err);
     }
   }
 
   async writeFile(directoryParts: string[], fileName: string, data: Uint8Array): Promise<void> {
     if (!data || data.byteLength === 0) {
-      throw new Error('Cannot write empty audio data.');
+      throw new ExtractionStageError(
+        'writing_output',
+        new Error('Cannot write empty audio data.')
+      );
     }
 
     const dirHandle = await this.resolveSubdirectory(directoryParts, true);
     if (!dirHandle) {
-      throw new Error('Failed to create output subdirectory.');
+      throw new ExtractionStageError(
+        'creating_directory',
+        new Error('Failed to create output subdirectory.')
+      );
     }
 
-    // Double-check before writing to guarantee we never overwrite an existing non-empty file
     try {
-      const existingHandle = await dirHandle.getFileHandle(fileName, { create: false });
-      const existingFile = await existingHandle.getFile();
-      if (existingFile.size > 0) {
-        return;
+      // Double-check before writing to guarantee we never overwrite an existing non-empty file
+      try {
+        const existingHandle = await dirHandle.getFileHandle(fileName, { create: false });
+        const existingFile = await existingHandle.getFile();
+        if (existingFile.size > 0) {
+          return;
+        }
+      } catch (err: unknown) {
+        if (
+          !(
+            err instanceof DOMException &&
+            (err.name === 'NotFoundError' || err.name === 'InvalidStateError')
+          )
+        ) {
+          throw err;
+        }
       }
-    } catch (err: unknown) {
-      if (!(err instanceof DOMException && err.name === 'NotFoundError')) {
+
+      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      try {
+        const bufferToWrite = new Uint8Array(data.byteLength);
+        bufferToWrite.set(data);
+        await writable.write(bufferToWrite);
+        await writable.close();
+      } catch (err) {
+        try {
+          await writable.abort();
+        } catch {
+          // Ignore abort error
+        }
         throw err;
       }
-    }
-
-    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-    const writable = await fileHandle.createWritable();
-    try {
-      const bufferToWrite = new Uint8Array(data.byteLength);
-      bufferToWrite.set(data);
-      await writable.write(bufferToWrite);
-      await writable.close();
-    } catch (err) {
-      try {
-        await writable.abort();
-      } catch {
-        // Ignore abort error
+    } catch (err: unknown) {
+      if (err instanceof ExtractionStageError) {
+        throw err;
       }
-      throw err;
+      throw new ExtractionStageError('writing_output', err);
     }
   }
 }
@@ -232,17 +265,28 @@ export interface RunBatchAudioExtractionOptions {
   resolveSourceFile?: (video: VideoItem) => Promise<File>;
 }
 
+/**
+ * Resolves a fresh File object for the given VideoItem.
+ * When a FileSystemFileHandle exists, always calls `handle.getFile()` right before
+ * processing so cached File snapshots cannot become stale during a long batch.
+ */
 async function defaultResolveSourceFile(video: VideoItem): Promise<File> {
+  if (video.handle && typeof video.handle.getFile === 'function') {
+    return await video.handle.getFile();
+  }
   if (video.file) {
     return video.file;
-  }
-  if (video.handle) {
-    return await video.handle.getFile();
   }
   throw new Error('Source video file handle is unavailable.');
 }
 
 function isPermissionRevokedError(err: unknown): boolean {
+  if (err instanceof ExtractionStageError) {
+    const name = err.errorName;
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return true;
+    }
+  }
   if (err instanceof DOMException) {
     return err.name === 'NotAllowedError' || err.name === 'SecurityError';
   }
@@ -251,6 +295,31 @@ function isPermissionRevokedError(err: unknown): boolean {
     return msg.includes('permission') || msg.includes('notallowederror') || msg.includes('securityerror');
   }
   return false;
+}
+
+function buildFailedFileRecord(
+  relativePath: string,
+  outputRelativePath: string,
+  err: unknown,
+  defaultStage: ExtractionFailureStage
+): FileExtractionRecord {
+  const info = describeExtractionError(err, defaultStage, {
+    relativePath,
+    outputRelativePath,
+  });
+
+  return {
+    relativePath,
+    outputRelativePath,
+    outcome: 'failed',
+    reason: info.reason,
+    errorName: info.errorName,
+    errorMessage: info.errorMessage,
+    friendlyExplanation: info.friendlyExplanation,
+    stage: info.stage,
+    stageLabel: info.stageLabel,
+    technicalDetails: info.technicalDetails,
+  };
 }
 
 /**
@@ -348,12 +417,14 @@ export async function runBatchAudioExtraction({
     // Validate relative path safety
     if (!item.validPath) {
       progress.failedCount++;
-      records.push({
-        relativePath: video.relativePath,
-        outputRelativePath: '',
-        outcome: 'failed',
-        reason: item.pathErrorReason || 'Invalid relative path.',
-      });
+      records.push(
+        buildFailedFileRecord(
+          video.relativePath,
+          '',
+          new Error(item.pathErrorReason || 'Invalid relative path.'),
+          'reading_source'
+        )
+      );
       emit();
       continue;
     }
@@ -383,12 +454,14 @@ export async function runBatchAudioExtraction({
         return { ...progress, records: [...records] };
       }
       progress.failedCount++;
-      records.push({
-        relativePath: video.relativePath,
-        outputRelativePath: item.outputRelativePath,
-        outcome: 'failed',
-        reason: 'Could not check output folder for existing file.',
-      });
+      records.push(
+        buildFailedFileRecord(
+          video.relativePath,
+          item.outputRelativePath,
+          err,
+          'writing_output'
+        )
+      );
       emit();
       continue;
     }
@@ -406,12 +479,14 @@ export async function runBatchAudioExtraction({
         });
       } else {
         progress.failedCount++;
-        records.push({
-          relativePath: video.relativePath,
-          outputRelativePath: item.outputRelativePath,
-          outcome: 'failed',
-          reason: initialSizeCheck.message || 'Invalid or empty video file.',
-        });
+        records.push(
+          buildFailedFileRecord(
+            video.relativePath,
+            item.outputRelativePath,
+            new Error(initialSizeCheck.message || 'Invalid or empty video file.'),
+            'reading_source'
+          )
+        );
       }
       emit();
       continue;
@@ -421,14 +496,16 @@ export async function runBatchAudioExtraction({
     let sourceFile: File;
     try {
       sourceFile = await resolveSourceFile(video);
-    } catch {
+    } catch (err: unknown) {
       progress.failedCount++;
-      records.push({
-        relativePath: video.relativePath,
-        outputRelativePath: item.outputRelativePath,
-        outcome: 'failed',
-        reason: 'Unable to read source video file.',
-      });
+      records.push(
+        buildFailedFileRecord(
+          video.relativePath,
+          item.outputRelativePath,
+          err,
+          'reading_source'
+        )
+      );
       emit();
       continue;
     }
@@ -446,12 +523,14 @@ export async function runBatchAudioExtraction({
         });
       } else {
         progress.failedCount++;
-        records.push({
-          relativePath: video.relativePath,
-          outputRelativePath: item.outputRelativePath,
-          outcome: 'failed',
-          reason: actualSizeCheck.message || 'Invalid or empty video file.',
-        });
+        records.push(
+          buildFailedFileRecord(
+            video.relativePath,
+            item.outputRelativePath,
+            new Error(actualSizeCheck.message || 'Invalid or empty video file.'),
+            'reading_source'
+          )
+        );
       }
       emit();
       continue;
@@ -488,9 +567,16 @@ export async function runBatchAudioExtraction({
     progress.statusMessage = `Extracting audio (${i + 1} / ${totalFiles}): ${video.name}`;
     emit();
 
-    // Perform audio extraction and write output file
+    // Perform audio extraction and write output file, tracking exact failure stages
+    let activeStage: ExtractionFailureStage = 'running_ffmpeg';
     try {
-      const encoded = await encoder.extractAudio(sourceFile, format, signal);
+      const refreshCallback = video.handle ? () => resolveSourceFile(video) : undefined;
+      const encoded = await encoder.extractAudio(
+        sourceFile,
+        format,
+        signal,
+        refreshCallback
+      );
 
       if (signal?.aborted) {
         encoder.terminate();
@@ -501,9 +587,17 @@ export async function runBatchAudioExtraction({
       }
 
       if (!encoded.data || encoded.data.byteLength === 0) {
-        throw new Error('Encoded audio output was empty.');
+        throw new ExtractionStageError(
+          'running_ffmpeg',
+          new Error('Encoded audio output was empty.'),
+          {
+            overrideErrorName: 'FFmpegEncodingError',
+            overrideMessage: 'Encoded audio output was empty.',
+          }
+        );
       }
 
+      activeStage = 'writing_output';
       await writer.writeFile(item.directoryParts, item.outputFileName, encoded.data);
 
       progress.completedCount++;
@@ -541,20 +635,15 @@ export async function runBatchAudioExtraction({
         return { ...progress, records: [...records] };
       }
 
-      const failureReason =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string' && err.trim().length > 0
-          ? err.trim()
-          : 'Audio conversion failed.';
-
       progress.failedCount++;
-      records.push({
-        relativePath: video.relativePath,
-        outputRelativePath: item.outputRelativePath,
-        outcome: 'failed',
-        reason: failureReason,
-      });
+      records.push(
+        buildFailedFileRecord(
+          video.relativePath,
+          item.outputRelativePath,
+          err,
+          activeStage
+        )
+      );
       emit();
     }
   }
