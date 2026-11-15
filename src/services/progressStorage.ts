@@ -92,6 +92,7 @@ export function loadSettings(): PlayerSettings {
     autoplayNext: true,
     volume: 1,
     muted: false,
+    playlistCollapsed: false,
   };
 
   try {

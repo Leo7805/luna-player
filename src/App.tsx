@@ -9,12 +9,15 @@ import { Playlist } from './components/Playlist';
 import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { loadSettings, saveSettings } from './services/progressStorage';
-import { ListVideo } from 'lucide-react';
+import { ListVideo, PanelRightOpen } from 'lucide-react';
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [showTheaterPlaylist, setShowTheaterPlaylist] = useState(false);
+  const [isPlaylistCollapsed, setIsPlaylistCollapsed] = useState<boolean>(
+    () => Boolean(loadSettings().playlistCollapsed)
+  );
 
   const {
     library,
@@ -86,6 +89,11 @@ export function App() {
 
   const toggleTheaterMode = () => {
     setIsTheaterMode((prev) => !prev);
+  };
+
+  const handleSetPlaylistCollapsed = (collapsed: boolean) => {
+    setIsPlaylistCollapsed(collapsed);
+    saveSettings({ playlistCollapsed: collapsed });
   };
 
   return (
@@ -209,10 +217,20 @@ export function App() {
               </div>
             </div>
           ) : (
-            /* --- Normal Split Screen Layout --- */
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 items-start">
-              {/* Left Column: Video Player & Controls (8 cols on lg) */}
-              <div className="lg:col-span-8 flex flex-col gap-4">
+            /* --- Normal Split Screen Layout (with collapsible desktop Playlist sidebar) --- */
+            <div
+              className="relative flex flex-col lg:flex-row flex-1 items-start w-full gap-6 lg:gap-0"
+              data-testid="desktop-split-layout"
+            >
+              {/* Left Column: Video Player & Controls */}
+              <div
+                data-testid="player-column"
+                className={`w-full flex flex-col gap-4 min-w-0 lg:transition-all lg:duration-200 ease-out ${
+                  isPlaylistCollapsed
+                    ? 'lg:max-w-5xl xl:max-w-[1080px] lg:mx-auto'
+                    : 'lg:flex-1'
+                }`}
+              >
                 <VideoPlayer
                   videoRef={videoRef}
                   currentVideo={currentVideo}
@@ -247,14 +265,43 @@ export function App() {
                 />
               </div>
 
-              {/* Right Column: Hierarchical Playlist (4 cols on lg) */}
-              <div className="lg:col-span-4 h-[650px] lg:sticky lg:top-20">
-                <Playlist
-                  library={library}
-                  currentVideo={currentVideo}
-                  onSelectVideo={(video) => selectVideo(video, true)}
-                />
-              </div>
+              {/* Right Column: Hierarchical Playlist (Collapsible on lg desktop, stacked on mobile/tablet) */}
+              <aside
+                aria-label="Playlist sidebar"
+                data-testid="playlist-sidebar"
+                className={`w-full h-[650px] lg:sticky lg:top-20 shrink-0 lg:transition-all lg:duration-200 ease-out ${
+                  isPlaylistCollapsed
+                    ? 'lg:w-0 lg:ml-0 lg:opacity-0 lg:translate-x-4 lg:pointer-events-none lg:overflow-hidden'
+                    : 'lg:w-[360px] xl:w-[400px] lg:ml-6 lg:opacity-100 lg:translate-x-0'
+                }`}
+              >
+                <div className="w-full lg:w-[360px] xl:w-[400px] h-full">
+                  <Playlist
+                    library={library}
+                    currentVideo={currentVideo}
+                    onSelectVideo={(video) => selectVideo(video, true)}
+                    onCollapseSidebar={() => handleSetPlaylistCollapsed(true)}
+                  />
+                </div>
+              </aside>
+
+              {/* Right-edge reopen button when Playlist is collapsed on desktop */}
+              {isPlaylistCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => handleSetPlaylistCollapsed(false)}
+                  className="hidden lg:flex fixed right-0 top-24 z-30 items-center gap-2 pl-3 pr-2.5 py-2.5 rounded-l-2xl glass-panel border border-r-0 border-slate-300/80 dark:border-white/15 shadow-xl text-xs font-semibold text-slate-800 dark:text-slate-100 hover:text-sky-600 dark:hover:text-sky-400 hover:pr-3.5 transition-all duration-200 cursor-pointer"
+                  aria-label="Expand playlist"
+                  title={`Show Playlist (${totalCount} videos)`}
+                  data-testid="expand-playlist-button"
+                >
+                  <PanelRightOpen className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span>Playlist</span>
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-300 font-mono font-bold">
+                    {totalCount}
+                  </span>
+                </button>
+              )}
             </div>
           )
         ) : (

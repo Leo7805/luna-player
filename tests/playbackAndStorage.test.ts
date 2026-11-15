@@ -78,14 +78,17 @@ describe('Video Identity & Playback Progress Persistence', () => {
     expect(nonExistent).toBeNull();
   });
 
-  it('saves and restores player settings properly', () => {
+  it('saves and restores player settings properly (including collapsible playlist state)', () => {
     expect(loadSettings().autoplayNext).toBe(true);
+    expect(loadSettings().playlistCollapsed).toBe(false);
 
-    saveSettings({ autoplayNext: false });
+    saveSettings({ autoplayNext: false, playlistCollapsed: true });
     expect(loadSettings().autoplayNext).toBe(false);
+    expect(loadSettings().playlistCollapsed).toBe(true);
 
-    saveSettings({ autoplayNext: true });
+    saveSettings({ autoplayNext: true, playlistCollapsed: false });
     expect(loadSettings().autoplayNext).toBe(true);
+    expect(loadSettings().playlistCollapsed).toBe(false);
   });
 });
 

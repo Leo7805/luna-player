@@ -41,6 +41,7 @@ export interface PlayerSettings {
   autoplayNext: boolean;
   volume: number;
   muted: boolean;
+  playlistCollapsed?: boolean;
   lastPlayedId?: string;
   lastLibraryId?: string;
 }

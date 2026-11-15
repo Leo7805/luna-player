@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, X, ListVideo, ChevronsUpDown, AudioLines } from 'lucide-react';
+import { Search, X, ListVideo, ChevronsUpDown, AudioLines, PanelRightClose } from 'lucide-react';
 import { VideoLibrary, VideoItem } from '../types/video';
 import { PlaylistFolder } from './PlaylistFolder';
 import { ExtractAudioDialog } from './ExtractAudioDialog';
@@ -8,9 +8,15 @@ interface PlaylistProps {
   library: VideoLibrary;
   currentVideo: VideoItem | null;
   onSelectVideo: (video: VideoItem) => void;
+  onCollapseSidebar?: () => void;
 }
 
-export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps) {
+export function Playlist({
+  library,
+  currentVideo,
+  onSelectVideo,
+  onCollapseSidebar,
+}: PlaylistProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualExpandAll, setManualExpandAll] = useState<boolean | null>(null);
   const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
@@ -61,6 +67,19 @@ export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps
               <ChevronsUpDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
               <span>{defaultExpanded ? 'Collapse All' : 'Expand All'}</span>
             </button>
+
+            {onCollapseSidebar && (
+              <button
+                type="button"
+                onClick={onCollapseSidebar}
+                className="hidden lg:inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
+                title="Collapse playlist sidebar"
+                aria-label="Collapse playlist"
+                data-testid="collapse-playlist-button"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -86,7 +105,10 @@ export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps
       </div>
 
       {/* Playlist Content: Scrollable Tree */}
-      <div className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1">
+      <div
+        className="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1"
+        data-testid="playlist-scroll-container"
+      >
         {matchingCount === 0 ? (
           <div className="p-8 text-center text-slate-600 dark:text-slate-400">
             <p className="text-xs font-medium">No videos match "{searchQuery}"</p>
