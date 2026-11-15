@@ -383,14 +383,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       r="4.2"
                       fill="currentColor"
                     />
-                    <path
-                      d={
-                        autoplayNext
-                          ? 'M15.8 5.2L18.8 7L15.8 8.8V5.2Z'
-                          : 'M5.8 5.2L8.8 7L5.8 8.8V5.2Z'
-                      }
-                      fill={autoplayNext ? '#ffffff' : '#0f172a'}
-                    />
                   </svg>
                 </button>
               </Tooltip>
