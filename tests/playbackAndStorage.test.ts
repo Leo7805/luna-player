@@ -90,6 +90,19 @@ describe('Video Identity & Playback Progress Persistence', () => {
     expect(loadSettings().autoplayNext).toBe(true);
     expect(loadSettings().playlistCollapsed).toBe(false);
   });
+
+  it('saves and restores volume and muted settings properly', () => {
+    expect(loadSettings().volume).toBe(1);
+    expect(loadSettings().muted).toBe(false);
+
+    saveSettings({ volume: 0.42, muted: true });
+    expect(loadSettings().volume).toBe(0.42);
+    expect(loadSettings().muted).toBe(true);
+
+    saveSettings({ volume: 0.85, muted: false });
+    expect(loadSettings().volume).toBe(0.85);
+    expect(loadSettings().muted).toBe(false);
+  });
 });
 
 describe('Playback Navigation & Search Independence', () => {

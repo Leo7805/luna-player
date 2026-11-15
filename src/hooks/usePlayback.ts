@@ -18,9 +18,22 @@ export function usePlayback({ library }: UsePlaybackProps) {
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [autoplayNext, setAutoplayNext] = useState<boolean>(() => loadSettings().autoplayNext);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(0);
+  const [volume, setVolumeState] = useState<number>(() => {
+    const saved = loadSettings().volume;
+    return typeof saved === 'number' && Number.isFinite(saved)
+      ? Math.max(0, Math.min(1, saved))
+      : 1;
+  });
+  const [muted, setMutedState] = useState<boolean>(() => Boolean(loadSettings().muted));
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeObjectUrlRef = useRef<string | null>(null);
+  const volumeRef = useRef<number>(volume);
+  volumeRef.current = volume;
+  const mutedRef = useRef<boolean>(muted);
+  mutedRef.current = muted;
 
   // Monotonic token to prevent asynchronous file-read race conditions on rapid clicking
   const activeSelectionTokenRef = useRef(0);
@@ -92,7 +105,17 @@ export function usePlayback({ library }: UsePlaybackProps) {
     setIsPlaying(false);
     setAutoplayBlocked(false);
     setPlayerError(null);
+    setCurrentTime(0);
+    setDuration(0);
   }, [library?.id]);
+
+  // Synchronize persisted volume and mute state with the underlying video element
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    videoEl.volume = volume;
+    videoEl.muted = muted;
+  }, [volume, muted, videoSrc]);
 
   // Load a video item
   const selectVideo = useCallback(async (video: VideoItem, autoPlay = true) => {
@@ -112,6 +135,8 @@ export function usePlayback({ library }: UsePlaybackProps) {
     pendingAutoPlayTokenRef.current = autoPlay ? token : 0;
     setPlayerError(null);
     setAutoplayBlocked(false);
+    setCurrentTime(0);
+    setDuration(0);
     setCurrentVideo(video);
 
     try {
@@ -192,6 +217,11 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
     if (!videoEl || !video || !currentLib) return;
 
+    videoEl.volume = volumeRef.current;
+    videoEl.muted = mutedRef.current;
+    const nextDuration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    setDuration(nextDuration);
+
     try {
       const saved = getVideoProgress(
         currentLib.id,
@@ -211,6 +241,8 @@ export function usePlayback({ library }: UsePlaybackProps) {
       // Seek failure or invalid position; continue safely from beginning
     }
 
+    setCurrentTime(Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0);
+
     // If this video load had pending autoplay and is currently paused, start playback
     if (pendingAutoPlayTokenRef.current === activeSelectionTokenRef.current) {
       pendingAutoPlayTokenRef.current = 0;
@@ -229,8 +261,13 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
     if (!videoEl || !video || !currentLib) return;
 
-    const currentTime = videoEl.currentTime;
-    const duration = videoEl.duration;
+    const currentTimeVal = videoEl.currentTime;
+    const durationVal = videoEl.duration;
+
+    setCurrentTime(Number.isFinite(currentTimeVal) ? currentTimeVal : 0);
+    if (Number.isFinite(durationVal) && durationVal > 0) {
+      setDuration(durationVal);
+    }
 
     // Save roughly every 4 seconds or when near end
     const now = Date.now();
@@ -241,8 +278,8 @@ export function usePlayback({ library }: UsePlaybackProps) {
         video.relativePath,
         video.size,
         video.lastModified,
-        currentTime,
-        duration
+        currentTimeVal,
+        durationVal
       );
     }
   }, []);
@@ -262,6 +299,8 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
     if (!videoEl || !video || !currentLib) return;
 
+    setCurrentTime(Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0);
+
     saveVideoProgress(
       currentLib.id,
       video.relativePath,
@@ -280,6 +319,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
     if (!videoEl || !video || !currentLib) return;
 
+    setCurrentTime(Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0);
     // Synchronize isPlaying with native media element state
     setIsPlaying(!videoEl.paused);
 
@@ -329,6 +369,9 @@ export function usePlayback({ library }: UsePlaybackProps) {
     setIsPlaying(false);
 
     if (video && currentLib && videoEl) {
+      if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
+        setCurrentTime(videoEl.duration);
+      }
       // Mark as completed in storage
       saveVideoProgress(
         currentLib.id,
@@ -357,6 +400,70 @@ export function usePlayback({ library }: UsePlaybackProps) {
     }
   }, [attemptPlay]);
 
+  const togglePlayPause = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !currentVideoRef.current) return;
+    if (videoEl.paused || videoEl.ended) {
+      attemptPlay(videoEl, activeSelectionTokenRef.current);
+    } else {
+      videoEl.pause();
+    }
+  }, [attemptPlay]);
+
+  const seekTo = useCallback((time: number) => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !Number.isFinite(time)) return;
+    const maxTime = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    const clamped = Math.max(0, Math.min(time, maxTime));
+    try {
+      videoEl.currentTime = clamped;
+    } catch {
+      // Ignore invalid seek state before metadata is ready
+    }
+    setCurrentTime(clamped);
+  }, []);
+
+  const setVolume = useCallback((nextVolume: number) => {
+    if (!Number.isFinite(nextVolume)) return;
+    const clamped = Math.max(0, Math.min(1, nextVolume));
+    setVolumeState(clamped);
+    const shouldUnmute = clamped > 0 && mutedRef.current;
+    if (shouldUnmute) {
+      setMutedState(false);
+    }
+    if (videoRef.current) {
+      videoRef.current.volume = clamped;
+      if (shouldUnmute) {
+        videoRef.current.muted = false;
+      }
+    }
+    saveSettings({
+      volume: clamped,
+      ...(shouldUnmute ? { muted: false } : {}),
+    });
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    const nextMuted = !mutedRef.current;
+    setMutedState(nextMuted);
+    if (videoRef.current) {
+      videoRef.current.muted = nextMuted;
+    }
+    saveSettings({ muted: nextMuted });
+  }, []);
+
+  const handleVolumeChange = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    const nextVol = Number.isFinite(videoEl.volume)
+      ? Math.max(0, Math.min(1, videoEl.volume))
+      : 1;
+    const nextMuted = Boolean(videoEl.muted);
+    setVolumeState(nextVol);
+    setMutedState(nextMuted);
+    saveSettings({ volume: nextVol, muted: nextMuted });
+  }, []);
+
   return {
     videoRef,
     currentVideo,
@@ -365,6 +472,10 @@ export function usePlayback({ library }: UsePlaybackProps) {
     autoplayBlocked,
     playerError,
     autoplayNext,
+    currentTime,
+    duration,
+    volume,
+    muted,
     currentIndex,
     totalCount: flatPlaylist.length,
     hasNext,
@@ -373,6 +484,11 @@ export function usePlayback({ library }: UsePlaybackProps) {
     playNext,
     playPrevious,
     toggleAutoplayNext,
+    togglePlayPause,
+    seekTo,
+    setVolume,
+    toggleMute,
+    handleVolumeChange,
     handleLoadedMetadata,
     handleTimeUpdate,
     handlePlay,

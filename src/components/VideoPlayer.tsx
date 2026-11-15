@@ -333,10 +333,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   onClick={onToggleTheaterMode}
                   aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
                   aria-pressed={isTheaterMode}
-                  className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                  className={`p-2 rounded-lg bg-transparent border-0 shadow-none transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                     isTheaterMode
-                      ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
-                      : 'bg-black/60 hover:bg-black/80 text-slate-200 hover:text-white border-white/15'
+                      ? 'text-indigo-500 hover:text-indigo-400'
+                      : 'text-white/90 hover:text-white'
                   }`}
                 >
                   <Tv className="w-4 h-4" />
@@ -354,10 +354,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   onClick={onToggleAutoplayNext}
                   aria-label={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
                   aria-pressed={autoplayNext}
-                  className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                  className={`p-2 rounded-lg bg-transparent border-0 shadow-none transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                     autoplayNext
-                      ? 'bg-sky-500/25 hover:bg-sky-500/35 text-sky-300 border-sky-400/60 shadow-[0_0_10px_rgba(56,189,248,0.2)]'
-                      : 'bg-black/60 hover:bg-black/80 text-slate-400 hover:text-slate-200 border-white/15'
+                      ? 'text-indigo-500 hover:text-indigo-400'
+                      : 'text-white/80 hover:text-white'
                   }`}
                 >
                   <svg
@@ -375,7 +375,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       stroke="currentColor"
                       strokeWidth="1.6"
                       fill="currentColor"
-                      fillOpacity={autoplayNext ? 0.22 : 0}
+                      fillOpacity={autoplayNext ? 0.18 : 0}
                     />
                     <circle
                       cx={autoplayNext ? 17 : 7}
@@ -389,7 +389,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                           ? 'M15.8 5.2L18.8 7L15.8 8.8V5.2Z'
                           : 'M5.8 5.2L8.8 7L5.8 8.8V5.2Z'
                       }
-                      fill="#0f172a"
+                      fill={autoplayNext ? '#ffffff' : '#0f172a'}
                     />
                   </svg>
                 </button>

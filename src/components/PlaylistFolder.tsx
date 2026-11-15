@@ -1,7 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { FolderNode, VideoItem } from '../types/video';
 import { PlaylistItem } from './PlaylistItem';
+
+export interface ExpansionOverride {
+  version: number;
+  expanded: boolean;
+}
 
 interface PlaylistFolderProps {
   folder: FolderNode;
@@ -11,6 +16,12 @@ interface PlaylistFolderProps {
   onSelectVideo: (video: VideoItem) => void;
   searchQuery: string;
   defaultExpanded: boolean;
+  expansionOverride: ExpansionOverride | null;
+}
+
+function folderContainsVideo(folder: FolderNode, videoId: string): boolean {
+  if (folder.videos.some((v) => v.id === videoId)) return true;
+  return folder.subfolders.some((sub) => folderContainsVideo(sub, videoId));
 }
 
 export function PlaylistFolder({
@@ -21,8 +32,22 @@ export function PlaylistFolder({
   onSelectVideo,
   searchQuery,
   defaultExpanded,
+  expansionOverride,
 }: PlaylistFolderProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [isExpanded, setIsExpanded] = useState(
+    expansionOverride ? expansionOverride.expanded : defaultExpanded
+  );
+  const prevVideoIdRef = useRef<string | null>(null);
+  const prevOverrideVersionRef = useRef<number>(expansionOverride?.version ?? 0);
+
+  // Explicit user action: Expand All / Collapse All takes precedence over current state
+  useEffect(() => {
+    if (!expansionOverride) return;
+    if (expansionOverride.version !== prevOverrideVersionRef.current) {
+      prevOverrideVersionRef.current = expansionOverride.version;
+      setIsExpanded(expansionOverride.expanded);
+    }
+  }, [expansionOverride]);
 
   // If search query is present, auto-expand to display matching search results
   useEffect(() => {
@@ -31,14 +56,18 @@ export function PlaylistFolder({
     }
   }, [searchQuery]);
 
-  // If current playing video is inside this folder or subfolder, ensure folder is expanded
+  // Auto-expand only when navigating to a newly selected video (never after Collapse All)
   useEffect(() => {
-    if (!currentVideoId) return;
-    const hasActiveDirect = folder.videos.some((v) => v.id === currentVideoId);
-    if (hasActiveDirect) {
+    if (!currentVideoId || currentVideoId === prevVideoIdRef.current) {
+      prevVideoIdRef.current = currentVideoId;
+      return;
+    }
+    prevVideoIdRef.current = currentVideoId;
+
+    if (folderContainsVideo(folder, currentVideoId)) {
       setIsExpanded(true);
     }
-  }, [currentVideoId, folder.videos]);
+  }, [currentVideoId, folder]);
 
   const hasSubfolders = folder.subfolders.length > 0;
   const hasVideos = folder.videos.length > 0;
@@ -118,6 +147,7 @@ export function PlaylistFolder({
               onSelectVideo={onSelectVideo}
               searchQuery={searchQuery}
               defaultExpanded={defaultExpanded}
+              expansionOverride={expansionOverride}
             />
           ))}
 

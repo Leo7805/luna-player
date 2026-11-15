@@ -9,7 +9,7 @@ import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { Tooltip } from './components/Tooltip';
 import { loadSettings, saveSettings } from './services/progressStorage';
-import { PanelRightOpen } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
@@ -316,7 +316,7 @@ export function App() {
                       aria-label="Show Playlist"
                       data-testid="expand-playlist-button"
                     >
-                      <PanelRightOpen className="h-4 w-4 shrink-0" />
+                      <PanelRight className="h-4 w-4 shrink-0" />
                     </button>
                   </Tooltip>
                 </div>

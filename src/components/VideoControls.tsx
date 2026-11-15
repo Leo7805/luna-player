@@ -143,7 +143,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               data-testid="play-pause-button"
               onClick={onTogglePlayPause}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               {isPlaying ? (
                 <Pause className="w-4 h-4 fill-current" />
@@ -175,7 +175,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               onClick={onPlayPrevious}
               disabled={!hasPrevious}
               aria-label="Previous episode"
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-35 disabled:hover:bg-white/10 disabled:cursor-not-allowed text-white transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               <SkipBack className="w-4 h-4" />
             </button>
@@ -192,7 +192,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               onClick={onPlayNext}
               disabled={!hasNext}
               aria-label="Next episode"
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-35 disabled:hover:bg-white/10 disabled:cursor-not-allowed text-white transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               <SkipForward className="w-4 h-4" />
             </button>
@@ -211,7 +211,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               data-testid="mute-toggle-button"
               onClick={onToggleMute}
               aria-label={muted || effectiveVolume === 0 ? 'Unmute' : 'Mute'}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               <VolumeIcon className="w-4 h-4" />
             </button>
@@ -246,7 +246,7 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
               data-testid="fullscreen-toggle-button"
               onClick={onToggleFullscreen}
               aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
             </button>
