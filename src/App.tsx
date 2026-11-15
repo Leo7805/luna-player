@@ -56,7 +56,14 @@ export function App() {
     toggleAutoplayNext,
     togglePlayPause,
     seekTo,
+    seekBy,
+    seekToStart,
+    seekToEnd,
+    adjustPlaybackRate,
+    toggleMaxPlaybackRate,
+    handleRateChange,
     setVolume,
+    adjustVolume,
     toggleMute,
     handleVolumeChange,
     handleLoadedMetadata,
@@ -270,10 +277,17 @@ export function App() {
                   onToggleAutoplayNext={toggleAutoplayNext}
                   onTogglePlayPause={togglePlayPause}
                   onSeek={seekTo}
+                  onSeekBy={seekBy}
+                  onSeekToStart={seekToStart}
+                  onSeekToEnd={seekToEnd}
+                  onAdjustPlaybackRate={adjustPlaybackRate}
+                  onToggleMaxPlaybackRate={toggleMaxPlaybackRate}
+                  onNativeRateChange={handleRateChange}
                   onPlayNext={playNext}
                   onPlayPrevious={playPrevious}
                   onToggleMute={toggleMute}
                   onVolumeChange={setVolume}
+                  onAdjustVolume={adjustVolume}
                   onNativeVolumeChange={handleVolumeChange}
                   onLoadedMetadata={handleLoadedMetadata}
                   onTimeUpdate={handleTimeUpdate}

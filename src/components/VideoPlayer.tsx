@@ -8,6 +8,12 @@ import {
 import { VideoItem } from '../types/video';
 import { VideoControls } from './VideoControls';
 import { Tooltip } from './Tooltip';
+import { DEFAULT_CONTROL_SETTINGS } from '../config/controlSettings';
+import {
+  resolveShortcutAction,
+  isInteractiveOrEditableTarget,
+  hasBlockingModalOpen,
+} from '../utils/shortcuts';
 
 interface VideoPlayerProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -30,10 +36,17 @@ interface VideoPlayerProps {
   onToggleAutoplayNext: () => void;
   onTogglePlayPause: () => void;
   onSeek: (time: number) => void;
+  onSeekBy: (deltaSeconds: number) => void;
+  onSeekToStart: () => void;
+  onSeekToEnd: () => void;
+  onAdjustPlaybackRate: (direction: -1 | 1) => void;
+  onToggleMaxPlaybackRate: () => void;
+  onNativeRateChange: () => void;
   onPlayNext: () => void;
   onPlayPrevious: () => void;
   onToggleMute: () => void;
   onVolumeChange: (volume: number) => void;
+  onAdjustVolume: (direction: -1 | 1) => void;
   onNativeVolumeChange: () => void;
   onLoadedMetadata: () => void;
   onTimeUpdate: () => void;
@@ -66,10 +79,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onToggleAutoplayNext,
   onTogglePlayPause,
   onSeek,
+  onSeekBy,
+  onSeekToStart,
+  onSeekToEnd,
+  onAdjustPlaybackRate,
+  onToggleMaxPlaybackRate,
+  onNativeRateChange,
   onPlayNext,
   onPlayPrevious,
   onToggleMute,
   onVolumeChange,
+  onAdjustVolume,
   onNativeVolumeChange,
   onLoadedMetadata,
   onTimeUpdate,
@@ -155,51 +175,74 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [videoRef]);
 
-  // Keyboard shortcuts (guarded so focused sliders, buttons, inputs, or dialogs are never hijacked)
+  // Keyboard shortcuts (guarded against blocking modals, interactive/editable controls, modifiers, and IME)
   useEffect(() => {
     if (!currentVideo) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (hasBlockingModalOpen()) return;
+      if (isInteractiveOrEditableTarget(e.target)) return;
 
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        if (target.closest('[role="dialog"]')) return;
-        const tagName = target.tagName;
-        if (
-          tagName === 'INPUT' ||
-          tagName === 'TEXTAREA' ||
-          tagName === 'SELECT' ||
-          tagName === 'BUTTON' ||
-          tagName === 'SUMMARY' ||
-          target.isContentEditable ||
-          target.closest('button, input, textarea, select, summary, [contenteditable="true"]')
-        ) {
-          return;
-        }
+      const resolved = resolveShortcutAction(e);
+      if (!resolved) return;
+
+      e.preventDefault();
+      if (resolved.suppressedRepeat) return;
+
+      const { seek } = DEFAULT_CONTROL_SETTINGS;
+
+      switch (resolved.action) {
+        case 'toggle-playback':
+          onTogglePlayPause();
+          break;
+        case 'decrease-playback-rate':
+          onAdjustPlaybackRate(-1);
+          break;
+        case 'increase-playback-rate':
+          onAdjustPlaybackRate(1);
+          break;
+        case 'toggle-max-playback-rate':
+          onToggleMaxPlaybackRate();
+          break;
+        case 'decrease-volume':
+          onAdjustVolume(-1);
+          break;
+        case 'increase-volume':
+          onAdjustVolume(1);
+          break;
+        case 'toggle-muted':
+          onToggleMute();
+          break;
+        case 'seek-backward-fine':
+          onSeekBy(-seek.fineSeconds);
+          break;
+        case 'seek-forward-fine':
+          onSeekBy(seek.fineSeconds);
+          break;
+        case 'seek-backward':
+          onSeekBy(-seek.nearSeconds);
+          break;
+        case 'seek-forward':
+          onSeekBy(seek.nearSeconds);
+          break;
+        case 'seek-backward-far':
+          onSeekBy(-seek.farSeconds);
+          break;
+        case 'seek-forward-far':
+          onSeekBy(seek.farSeconds);
+          break;
+        case 'seek-start':
+          onSeekToStart();
+          break;
+        case 'seek-end':
+          onSeekToEnd();
+          break;
+        case 'toggle-fullscreen':
+          toggleFullscreen();
+          break;
       }
 
-      if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
-        e.preventDefault();
-        onTogglePlayPause();
-        revealOverlay();
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        onSeek(Math.max(0, currentTime - 5));
-        revealOverlay();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        onSeek(Math.min(duration || 0, currentTime + 5));
-        revealOverlay();
-      } else if (e.key === 'm' || e.key === 'M') {
-        e.preventDefault();
-        onToggleMute();
-        revealOverlay();
-      } else if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        toggleFullscreen();
-        revealOverlay();
-      }
+      revealOverlay();
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -208,10 +251,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [
     currentVideo,
-    currentTime,
-    duration,
     onTogglePlayPause,
-    onSeek,
+    onSeekBy,
+    onSeekToStart,
+    onSeekToEnd,
+    onAdjustPlaybackRate,
+    onToggleMaxPlaybackRate,
+    onAdjustVolume,
     onToggleMute,
     toggleFullscreen,
     revealOverlay,
@@ -314,6 +360,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onPause={onPause}
             onSeeked={onSeeked}
             onVolumeChange={onNativeVolumeChange}
+            onRateChange={onNativeRateChange}
             onError={onError}
             onEnded={onEnded}
             playsInline

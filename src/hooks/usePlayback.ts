@@ -6,6 +6,11 @@ import {
   loadSettings,
   saveSettings,
 } from '../services/progressStorage';
+import {
+  DEFAULT_CONTROL_SETTINGS,
+  END_SEEK_OFFSET_SECONDS,
+  PLAYBACK_RATE_EPSILON,
+} from '../config/controlSettings';
 
 interface UsePlaybackProps {
   library: VideoLibrary | null;
@@ -27,6 +32,9 @@ export function usePlayback({ library }: UsePlaybackProps) {
       : 1;
   });
   const [muted, setMutedState] = useState<boolean>(() => Boolean(loadSettings().muted));
+  const [playbackRate, setPlaybackRateState] = useState<number>(
+    DEFAULT_CONTROL_SETTINGS.playbackRate.default
+  );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeObjectUrlRef = useRef<string | null>(null);
@@ -34,6 +42,16 @@ export function usePlayback({ library }: UsePlaybackProps) {
   volumeRef.current = volume;
   const mutedRef = useRef<boolean>(muted);
   mutedRef.current = muted;
+  const playbackRateRef = useRef<number>(playbackRate);
+  playbackRateRef.current = playbackRate;
+  const lastAudibleVolumeRef = useRef<number>(
+    volume > DEFAULT_CONTROL_SETTINGS.volume.min
+      ? volume
+      : DEFAULT_CONTROL_SETTINGS.volume.defaultUnmuted
+  );
+  if (volume > DEFAULT_CONTROL_SETTINGS.volume.min) {
+    lastAudibleVolumeRef.current = volume;
+  }
 
   // Monotonic token to prevent asynchronous file-read race conditions on rapid clicking
   const activeSelectionTokenRef = useRef(0);
@@ -109,13 +127,18 @@ export function usePlayback({ library }: UsePlaybackProps) {
     setDuration(0);
   }, [library]);
 
-  // Synchronize persisted volume and mute state with the underlying video element
+  // Synchronize persisted volume, mute, and playback speed state with the underlying video element
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     videoEl.volume = volume;
     videoEl.muted = muted;
-  }, [volume, muted, videoSrc]);
+    try {
+      videoEl.playbackRate = playbackRate;
+    } catch {
+      // Ignore unsupported playbackRate during initial setup
+    }
+  }, [volume, muted, playbackRate, videoSrc]);
 
   // Load a video item
   const selectVideo = useCallback(async (video: VideoItem, autoPlay = true) => {
@@ -219,6 +242,11 @@ export function usePlayback({ library }: UsePlaybackProps) {
 
     videoEl.volume = volumeRef.current;
     videoEl.muted = mutedRef.current;
+    try {
+      videoEl.playbackRate = playbackRateRef.current;
+    } catch {
+      // Ignore unsupported playbackRate and keep actual element rate
+    }
     const nextDuration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
     setDuration(nextDuration);
 
@@ -423,9 +451,88 @@ export function usePlayback({ library }: UsePlaybackProps) {
     setCurrentTime(clamped);
   }, []);
 
+  const seekBy = useCallback(
+    (deltaSeconds: number) => {
+      const videoEl = videoRef.current;
+      if (!videoEl || !Number.isFinite(deltaSeconds)) return;
+      const baseTime = Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
+      seekTo(baseTime + deltaSeconds);
+    },
+    [seekTo]
+  );
+
+  const seekToStart = useCallback(() => {
+    seekTo(0);
+  }, [seekTo]);
+
+  const seekToEnd = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    const maxTime = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    seekTo(Math.max(0, maxTime - END_SEEK_OFFSET_SECONDS));
+  }, [seekTo]);
+
+  const applyPlaybackRate = useCallback((targetRate: number): number => {
+    const { min, max } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+    const rounded = Math.round(Math.min(max, Math.max(min, targetRate)) * 100) / 100;
+    const videoEl = videoRef.current;
+    if (!videoEl) {
+      setPlaybackRateState(rounded);
+      return rounded;
+    }
+    try {
+      videoEl.playbackRate = rounded;
+      const actual = Number.isFinite(videoEl.playbackRate) ? videoEl.playbackRate : rounded;
+      setPlaybackRateState(actual);
+      return actual;
+    } catch {
+      const actual = Number.isFinite(videoEl.playbackRate)
+        ? videoEl.playbackRate
+        : playbackRateRef.current;
+      setPlaybackRateState(actual);
+      return actual;
+    }
+  }, []);
+
+  const adjustPlaybackRate = useCallback(
+    (direction: -1 | 1): number => {
+      const { step } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+      const currentRate =
+        videoRef.current && Number.isFinite(videoRef.current.playbackRate)
+          ? videoRef.current.playbackRate
+          : playbackRateRef.current;
+      return applyPlaybackRate(currentRate + direction * step);
+    },
+    [applyPlaybackRate]
+  );
+
+  const toggleMaxPlaybackRate = useCallback((): number => {
+    const { default: defaultRate, max } = DEFAULT_CONTROL_SETTINGS.playbackRate;
+    const currentRate =
+      videoRef.current && Number.isFinite(videoRef.current.playbackRate)
+        ? videoRef.current.playbackRate
+        : playbackRateRef.current;
+    const isDefault = Math.abs(currentRate - defaultRate) <= PLAYBACK_RATE_EPSILON;
+    return applyPlaybackRate(isDefault ? max : defaultRate);
+  }, [applyPlaybackRate]);
+
+  const handleRateChange = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !Number.isFinite(videoEl.playbackRate)) return;
+    setPlaybackRateState(videoEl.playbackRate);
+  }, []);
+
   const setVolume = useCallback((nextVolume: number) => {
     if (!Number.isFinite(nextVolume)) return;
-    const clamped = Math.max(0, Math.min(1, nextVolume));
+    const clamped = Number(
+      Math.max(
+        DEFAULT_CONTROL_SETTINGS.volume.min,
+        Math.min(DEFAULT_CONTROL_SETTINGS.volume.max, nextVolume)
+      ).toFixed(2)
+    );
+    if (clamped > DEFAULT_CONTROL_SETTINGS.volume.min) {
+      lastAudibleVolumeRef.current = clamped;
+    }
     setVolumeState(clamped);
     const shouldUnmute = clamped > 0 && mutedRef.current;
     if (shouldUnmute) {
@@ -443,13 +550,54 @@ export function usePlayback({ library }: UsePlaybackProps) {
     });
   }, []);
 
+  const adjustVolume = useCallback(
+    (direction: -1 | 1) => {
+      const { step, min, max } = DEFAULT_CONTROL_SETTINGS.volume;
+      const currentVol =
+        videoRef.current && Number.isFinite(videoRef.current.volume)
+          ? videoRef.current.volume
+          : volumeRef.current;
+      const nextVolume = Number(Math.min(max, Math.max(min, currentVol + direction * step)).toFixed(2));
+      if (nextVolume > min) {
+        lastAudibleVolumeRef.current = nextVolume;
+      }
+      setVolumeState(nextVolume);
+      setMutedState(false);
+      if (videoRef.current) {
+        videoRef.current.muted = false;
+        videoRef.current.volume = nextVolume;
+      }
+      saveSettings({ volume: nextVolume, muted: false });
+    },
+    []
+  );
+
   const toggleMute = useCallback(() => {
-    const nextMuted = !mutedRef.current;
-    setMutedState(nextMuted);
-    if (videoRef.current) {
-      videoRef.current.muted = nextMuted;
+    const isEffectivelyMuted =
+      mutedRef.current || volumeRef.current <= DEFAULT_CONTROL_SETTINGS.volume.min;
+
+    if (isEffectivelyMuted) {
+      const restoredVolume =
+        volumeRef.current > DEFAULT_CONTROL_SETTINGS.volume.min
+          ? volumeRef.current
+          : lastAudibleVolumeRef.current;
+      lastAudibleVolumeRef.current = restoredVolume;
+      setMutedState(false);
+      setVolumeState(restoredVolume);
+      if (videoRef.current) {
+        videoRef.current.muted = false;
+        videoRef.current.volume = restoredVolume;
+      }
+      saveSettings({ muted: false, volume: restoredVolume });
+      return;
     }
-    saveSettings({ muted: nextMuted });
+
+    lastAudibleVolumeRef.current = volumeRef.current;
+    setMutedState(true);
+    if (videoRef.current) {
+      videoRef.current.muted = true;
+    }
+    saveSettings({ muted: true });
   }, []);
 
   const handleVolumeChange = useCallback(() => {
@@ -459,6 +607,9 @@ export function usePlayback({ library }: UsePlaybackProps) {
       ? Math.max(0, Math.min(1, videoEl.volume))
       : 1;
     const nextMuted = Boolean(videoEl.muted);
+    if (nextVol > DEFAULT_CONTROL_SETTINGS.volume.min) {
+      lastAudibleVolumeRef.current = nextVol;
+    }
     setVolumeState(nextVol);
     setMutedState(nextMuted);
     saveSettings({ volume: nextVol, muted: nextMuted });
@@ -476,6 +627,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
     duration,
     volume,
     muted,
+    playbackRate,
     currentIndex,
     totalCount: flatPlaylist.length,
     hasNext,
@@ -486,7 +638,14 @@ export function usePlayback({ library }: UsePlaybackProps) {
     toggleAutoplayNext,
     togglePlayPause,
     seekTo,
+    seekBy,
+    seekToStart,
+    seekToEnd,
+    adjustPlaybackRate,
+    toggleMaxPlaybackRate,
+    handleRateChange,
     setVolume,
+    adjustVolume,
     toggleMute,
     handleVolumeChange,
     handleLoadedMetadata,
