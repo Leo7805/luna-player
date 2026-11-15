@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AudioLines,
   Folder,
@@ -31,6 +32,8 @@ interface ExtractAudioDialogProps {
   library: VideoLibrary;
 }
 
+const MAX_VISIBLE_NOTABLE_RECORDS = 20;
+
 export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDialogProps) {
   const [format, setFormat] = useState<AudioOutputFormat>('mp3');
   const [outputDirHandle, setOutputDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -39,6 +42,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
   const [progress, setProgress] = useState<BatchExtractionProgress | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const dialogPanelRef = useRef<HTMLDivElement | null>(null);
 
   const fsaWriteSupported = isDirectoryWriteSupported();
   const totalVideos = library.flatPlaylist.length;
@@ -53,6 +57,27 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       }
     };
   }, []);
+
+  // Keyboard Escape handling & background scroll lock while dialog is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isRunning) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, isRunning, onClose]);
 
   // Build dynamic example output path from the loaded library (or fallback example)
   const exampleOutputPath = useMemo(() => {
@@ -144,28 +169,39 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
   const notableRecords = progress
     ? progress.records.filter((r) => r.outcome === 'failed' || r.outcome === 'skipped')
     : [];
+  const visibleNotableRecords = notableRecords.slice(0, MAX_VISIBLE_NOTABLE_RECORDS);
+  const hiddenNotableCount = Math.max(0, notableRecords.length - visibleNotableRecords.length);
 
-  return (
+  const dialogContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="extract-audio-title"
+      data-testid="extract-audio-overlay"
     >
-      <div className="w-full max-w-md rounded-2xl glass-panel shadow-2xl border border-slate-300/80 dark:border-white/15 overflow-hidden text-slate-900 dark:text-slate-100">
-        {/* Dialog Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-300/60 dark:border-white/10">
-          <div className="flex items-center gap-2.5">
+      <div
+        ref={dialogPanelRef}
+        className="flex flex-col w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] min-h-0 rounded-2xl glass-panel shadow-2xl border border-slate-300/80 dark:border-white/15 overflow-hidden text-slate-900 dark:text-slate-100"
+        style={{ maxHeight: 'min(calc(100dvh - 1.5rem), calc(100vh - 1.5rem), 100%)' }}
+        data-testid="extract-audio-modal"
+      >
+        {/* Dialog Header (Pinned) */}
+        <div
+          className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-300/60 dark:border-white/10 shrink-0"
+          data-testid="extract-audio-header"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
             <AudioLines className="h-5 w-5 text-sky-600 dark:text-sky-400 shrink-0" />
             <h2
               id="extract-audio-title"
-              className="text-base font-bold tracking-tight text-slate-900 dark:text-white"
+              className="text-base font-bold tracking-tight text-slate-900 dark:text-white truncate"
             >
               Extract Audio
             </h2>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             <span
               className="text-xs font-medium text-slate-600 dark:text-slate-400"
               data-testid="extract-audio-total-count"
@@ -174,6 +210,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
             </span>
             {!isRunning && (
               <button
+                type="button"
                 onClick={onClose}
                 className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
                 aria-label="Close Extract Audio dialog"
@@ -185,16 +222,19 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
           </div>
         </div>
 
-        {/* Dialog Body */}
-        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar">
+        {/* Dialog Body (Single Vertically Scrollable Central Region) */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3.5 custom-scrollbar"
+          data-testid="extract-audio-body"
+        >
           {/* Unsupported Browser Warning */}
           {!fsaWriteSupported && (
             <div
-              className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs"
+              className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs"
               role="alert"
             >
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-              <div>
+              <div className="min-w-0">
                 <p className="font-semibold">Browser not supported for folder writing</p>
                 <p className="mt-0.5 text-[11px] opacity-90 leading-relaxed">
                   Batch audio extraction saves files directly to a local folder using the File System
@@ -206,7 +246,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
           )}
 
           {/* Output Format Radio Selection */}
-          <fieldset disabled={isRunning} className="space-y-2.5">
+          <fieldset disabled={isRunning} className="space-y-2 min-w-0">
             <legend className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               Output format
             </legend>
@@ -218,13 +258,13 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                 return (
                   <label
                     key={fmt}
-                    className={`flex items-start justify-between gap-3 p-3 rounded-xl border transition cursor-pointer ${
+                    className={`flex items-start justify-between gap-3 p-2.5 sm:p-3 rounded-xl border transition cursor-pointer ${
                       isSelected
                         ? 'bg-sky-500/10 dark:bg-sky-500/15 border-sky-500/50 dark:border-sky-400/50'
                         : 'bg-slate-100/60 dark:bg-white/[0.03] border-slate-300/70 dark:border-white/10 hover:bg-slate-200/50 dark:hover:bg-white/[0.06]'
                     } ${isRunning ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0">
                       <input
                         type="radio"
                         name="audio-output-format"
@@ -232,11 +272,11 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                         checked={isSelected}
                         onChange={() => setFormat(fmt)}
                         disabled={isRunning}
-                        className="mt-1 h-4 w-4 accent-sky-500 cursor-pointer"
+                        className="mt-0.5 h-4 w-4 accent-sky-500 cursor-pointer shrink-0"
                       />
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white leading-tight">
                             {cfg.label}
                           </span>
                         </div>
@@ -247,7 +287,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                     </div>
 
                     {cfg.isDefault && (
-                      <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300 font-semibold border border-slate-300 dark:border-white/10 shrink-0">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300 font-semibold border border-slate-300 dark:border-white/10 shrink-0">
                         Default
                       </span>
                     )}
@@ -260,9 +300,9 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
           <hr className="border-slate-300/60 dark:border-white/10" />
 
           {/* Output Directory Selection & Folder Structure Info */}
-          <div className="space-y-3">
+          <div className="space-y-2.5 min-w-0">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-start gap-2.5 min-w-0">
+              <div className="flex items-start gap-2 min-w-0">
                 <Folder className="h-4 w-4 text-slate-600 dark:text-slate-400 shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-slate-900 dark:text-white">
@@ -270,6 +310,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                   </p>
                   <p
                     className="text-xs text-slate-600 dark:text-slate-400 truncate mt-0.5"
+                    title={outputDirHandle ? outputDirHandle.name : undefined}
                     data-testid="selected-output-folder"
                   >
                     {outputDirHandle
@@ -297,7 +338,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                 data-testid="same-folder-warning"
               >
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                <span>
+                <span className="min-w-0 break-words">
                   Selected output folder matches the source video folder. Choosing a separate output
                   folder is recommended to avoid mixing files. Existing files will not be overwritten.
                 </span>
@@ -311,7 +352,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                 role="alert"
               >
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-rose-500" />
-                <span>{pickerError}</span>
+                <span className="min-w-0 break-words">{pickerError}</span>
               </div>
             )}
 
@@ -320,10 +361,11 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
               <span className="font-medium">Preserve original folder structure</span>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-300/60 dark:border-white/10">
+            <div className="p-2.5 rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-300/60 dark:border-white/10 min-w-0">
               <p className="text-[11px] text-slate-500 dark:text-slate-400">Example output</p>
               <p
                 className="text-xs font-mono font-medium text-slate-800 dark:text-slate-200 truncate mt-0.5"
+                title={exampleOutputPath}
                 data-testid="example-output-path"
               >
                 {exampleOutputPath}
@@ -333,7 +375,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
             {/* Local Privacy & Memory Limit Explanation */}
             <div className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
               <ShieldCheck className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              <span>
+              <span className="min-w-0">
                 All audio conversion runs locally in your browser—no files are uploaded. Existing
                 files and videos over 2 GB are skipped. Browser memory limits may cause some smaller
                 files to fail.
@@ -341,19 +383,20 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
             </div>
           </div>
 
-          {/* Batch Processing Progress & Summary Panel */}
+          {/* Batch Processing Progress & Summary Panel (Compact) */}
           {progress && progress.state !== 'idle' && (
             <div
-              className="p-3.5 rounded-xl bg-slate-100/90 dark:bg-slate-900/80 border border-slate-300/80 dark:border-white/10 space-y-2.5"
+              className="p-3 rounded-xl bg-slate-100/90 dark:bg-slate-900/80 border border-slate-300/80 dark:border-white/10 space-y-2 min-w-0"
               data-testid="batch-progress-panel"
             >
-              <div className="flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center justify-between gap-2 text-xs min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
                   {isRunning && (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400 shrink-0" />
                   )}
                   <span
                     className="font-semibold text-slate-900 dark:text-white truncate"
+                    title={progress.statusMessage}
                     data-testid="batch-status-message"
                   >
                     {progress.statusMessage}
@@ -378,7 +421,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
               )}
 
               {/* Progress Bar */}
-              <div className="w-full h-2 rounded-full bg-slate-300/80 dark:bg-white/10 overflow-hidden">
+              <div className="w-full h-1.5 rounded-full bg-slate-300/80 dark:bg-white/10 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-200 ${
                     progress.state === 'error'
@@ -398,70 +441,83 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
               </div>
 
               {/* Counters: Completed, Skipped, Failed */}
-              <div className="grid grid-cols-3 gap-2 pt-1 text-center text-[11px]">
-                <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300">
-                  <span className="font-bold block text-xs" data-testid="count-completed">
+              <div className="grid grid-cols-3 gap-2 pt-0.5 text-center text-[11px]">
+                <div className="py-1 px-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300">
+                  <span className="font-bold block text-xs leading-tight" data-testid="count-completed">
                     {progress.completedCount}
                   </span>
-                  <span>Completed</span>
+                  <span className="text-[10px]">Completed</span>
                 </div>
-                <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300">
-                  <span className="font-bold block text-xs" data-testid="count-skipped">
+                <div className="py-1 px-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300">
+                  <span className="font-bold block text-xs leading-tight" data-testid="count-skipped">
                     {progress.skippedCount}
                   </span>
-                  <span>Skipped</span>
+                  <span className="text-[10px]">Skipped</span>
                 </div>
-                <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-800 dark:text-rose-300">
-                  <span className="font-bold block text-xs" data-testid="count-failed">
+                <div className="py-1 px-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-800 dark:text-rose-300">
+                  <span className="font-bold block text-xs leading-tight" data-testid="count-failed">
                     {progress.failedCount}
                   </span>
-                  <span>Failed</span>
+                  <span className="text-[10px]">Failed</span>
                 </div>
               </div>
 
               {/* Error Banner if fatal batch error */}
               {progress.errorMessage && (
                 <div
-                  className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px]"
+                  className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px] break-words line-clamp-3"
+                  title={progress.errorMessage}
                   role="alert"
                 >
                   {progress.errorMessage}
                 </div>
               )}
 
-              {/* Per-file skipped / failure details */}
-              {!isRunning && notableRecords.length > 0 && (
-                <div className="pt-1 space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar text-[11px]">
+              {/* Per-file skipped / failure details (rendered inline within the single scrollable body) */}
+              {!isRunning && visibleNotableRecords.length > 0 && (
+                <div className="pt-1 space-y-1 text-[11px] min-w-0">
                   <p className="font-semibold text-slate-700 dark:text-slate-300">
                     Details ({notableRecords.length}):
                   </p>
-                  {notableRecords.map((rec, idx) => (
+                  {visibleNotableRecords.map((rec, idx) => (
                     <div
                       key={`${rec.relativePath}-${idx}`}
-                      className="flex flex-col gap-0.5 p-1.5 rounded-lg bg-slate-200/50 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400"
+                      className="flex flex-col gap-0.5 p-1.5 rounded-lg bg-slate-200/50 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400 min-w-0"
                     >
-                      <span className="truncate font-mono font-medium text-slate-800 dark:text-slate-200" title={rec.relativePath}>
+                      <span
+                        className="truncate font-mono font-medium text-slate-800 dark:text-slate-200"
+                        title={rec.relativePath}
+                      >
                         {rec.relativePath}
                       </span>
                       <span
-                        className={`break-words ${
+                        className={`truncate ${
                           rec.outcome === 'failed'
                             ? 'text-rose-600 dark:text-rose-400'
                             : 'text-amber-700 dark:text-amber-300'
                         }`}
+                        title={rec.reason || rec.outcome}
                       >
                         {rec.reason || rec.outcome}
                       </span>
                     </div>
                   ))}
+                  {hiddenNotableCount > 0 && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-0.5">
+                      + {hiddenNotableCount} more {hiddenNotableCount === 1 ? 'item' : 'items'}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Dialog Footer Controls */}
-        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 border-t border-slate-300/60 dark:border-white/10 bg-slate-100/50 dark:bg-white/[0.02]">
+        {/* Dialog Footer Controls (Pinned) */}
+        <div
+          className="flex items-center justify-end gap-2.5 px-4 sm:px-5 py-3 border-t border-slate-300/60 dark:border-white/10 bg-slate-100/50 dark:bg-white/[0.02] shrink-0"
+          data-testid="extract-audio-footer"
+        >
           {isRunning ? (
             <button
               type="button"
@@ -502,4 +558,10 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(dialogContent, document.body);
+  }
+
+  return dialogContent;
 }
