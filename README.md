@@ -47,9 +47,16 @@ Open any local folder, automatically discover videos across nested subdirectorie
 - **💾 Playback Persistence**
   - Collision-proof library and video hashing preserves resume positions across browser sessions via IndexedDB.
   - Automatically restarts completed videos from the beginning.
-- **🎭 Theater Mode & Fullscreen**
-  - Expanded theater layout with auto-hiding floating overlays.
-  - Native HTML5 video fullscreen support.
+- **🎭 Theater Mode, Collapsible Playlist & Fullscreen**
+  - **Collapsible Playlist Sidebar**: Hide the desktop Playlist sidebar so the video player expands and centres in the available space, with your expanded/collapsed preference remembered across sessions.
+  - **Theater Mode**: Full-width theater layout with auto-hiding floating overlays and a toggleable playlist drawer.
+  - **Fullscreen**: Native HTML5 video fullscreen support.
+- **🎵 Batch Audio Extraction**
+  - Extract audio tracks from all videos in your loaded library for listening practice or audio stories.
+  - Supports **MP3 (128 kbps)** for broad compatibility and **WebM / Opus (64 kbps)** for smaller speech-oriented files.
+  - Choose a local output folder, preserve the original nested folder structure, and automatically skip existing output files.
+  - All conversion runs locally in the browser using **FFmpeg.wasm**—no files are uploaded.
+  - Videos over **2 GB** are skipped, and browser WebAssembly memory limits may affect very large or complex files.
 - **🎨 Glassmorphic Themes & Alpine Scenic Backdrop**
   - High-resolution Moraine Lake & alpine mountain photographic background.
   - Class-based Light and Dark themes with WCAG AA-conscious contrast and frosted-glass panels.
@@ -67,8 +74,17 @@ Open any local folder, automatically discover videos across nested subdirectorie
 - **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **Storage**: IndexedDB & LocalStorage
-- **APIs**: HTML5 Video API, File System Access API
+- **Media & APIs**: HTML5 Video API, File System Access API, [FFmpeg.wasm](https://ffmpegwasm.netlify.app/)
 - **Testing**: [Vitest](https://vitest.dev/) (Unit) & [Playwright Test](https://playwright.dev/) (Chromium E2E)
+
+---
+
+## 🌐 Browser Compatibility
+
+Local folder discovery and writing extracted audio files directly to disk rely on modern browser capabilities such as the **File System Access API** (`showDirectoryPicker`) and **WebAssembly**.
+
+- **Recommended**: **Google Chrome** or **Microsoft Edge** on desktop for the full experience, including seamless folder switching, persistent folder permissions, and batch audio extraction.
+- **Fallback Mode**: Browsers without File System Access API support can still load and play local video folders using the traditional folder file input (`webkitdirectory`), though direct folder output for batch audio extraction is unavailable.
 
 ---
 
