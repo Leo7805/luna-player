@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Search, X, ListVideo, ChevronsUpDown } from 'lucide-react';
+import { Search, X, ListVideo, ChevronsUpDown, AudioLines } from 'lucide-react';
 import { VideoLibrary, VideoItem } from '../types/video';
 import { PlaylistFolder } from './PlaylistFolder';
+import { ExtractAudioDialog } from './ExtractAudioDialog';
 
 interface PlaylistProps {
   library: VideoLibrary;
@@ -12,6 +13,7 @@ interface PlaylistProps {
 export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualExpandAll, setManualExpandAll] = useState<boolean | null>(null);
+  const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
 
   const totalVideos = library.flatPlaylist.length;
   const defaultExpanded = manualExpandAll !== null ? manualExpandAll : totalVideos <= 50;
@@ -37,14 +39,29 @@ export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps
             </span>
           </div>
 
-          <button
-            onClick={() => setManualExpandAll((prev) => (prev ? false : true))}
-            className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
-            title="Toggle expand/collapse all folders"
-          >
-            <ChevronsUpDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
-            <span>{defaultExpanded ? 'Collapse All' : 'Expand All'}</span>
-          </button>
+          <div className="flex items-center gap-1">
+            {totalVideos > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsExtractDialogOpen(true)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
+                title="Extract audio from all videos in playlist"
+                aria-label="Extract Audio"
+              >
+                <AudioLines className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                <span className="hidden sm:inline">Extract Audio</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setManualExpandAll((prev) => (prev ? false : true))}
+              className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition px-2 py-1 rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/5 cursor-pointer"
+              title="Toggle expand/collapse all folders"
+            >
+              <ChevronsUpDown className="h-3 w-3 text-slate-600 dark:text-slate-400" />
+              <span>{defaultExpanded ? 'Collapse All' : 'Expand All'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -87,6 +104,14 @@ export function Playlist({ library, currentVideo, onSelectVideo }: PlaylistProps
           />
         )}
       </div>
+
+      {isExtractDialogOpen && (
+        <ExtractAudioDialog
+          isOpen={isExtractDialogOpen}
+          onClose={() => setIsExtractDialogOpen(false)}
+          library={library}
+        />
+      )}
     </div>
   );
 }
