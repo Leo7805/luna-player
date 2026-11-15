@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import {
   createVideoStorageKey,
   VideoItem,
@@ -12,6 +12,7 @@ import {
 } from '../src/services/progressStorage';
 import { buildFolderTree, flattenTreeToDfsPlaylist } from '../src/utils/videoTree';
 import { parseFileList } from '../src/services/fallbackAccess';
+import { promptOpenDirectory } from '../src/services/directoryAccess';
 
 // In-memory localStorage mock for node environment
 const createLocalStorageMock = () => {
@@ -218,5 +219,36 @@ describe('Fallback Directory Parsing', () => {
     expect(lib?.name).toBe('MyLibrary');
     expect(lib?.flatPlaylist.length).toBe(2);
     expect(lib?.flatPlaylist.map((v) => v.name)).toEqual(['intro.mp4', 'episode1.mkv']);
+  });
+});
+
+describe('Directory Picker & Switch Folder Configuration', () => {
+  it('passes { startIn: "documents", mode: "read" } without a dynamic id and returns null on cancel', async () => {
+    const pickerCalls: unknown[] = [];
+    const mockHandle = { kind: 'directory', name: 'FolderB' } as unknown as FileSystemDirectoryHandle;
+
+    (globalThis as any).window = {
+      showDirectoryPicker: vi.fn().mockImplementation(async (opts: unknown) => {
+        pickerCalls.push(opts);
+        return mockHandle;
+      }),
+    };
+
+    const result1 = await promptOpenDirectory();
+    const result2 = await promptOpenDirectory();
+
+    expect(result1).toBe(mockHandle);
+    expect(result2).toBe(mockHandle);
+    expect(pickerCalls).toEqual([
+      { startIn: 'documents', mode: 'read' },
+      { startIn: 'documents', mode: 'read' },
+    ]);
+
+    // User cancellation (AbortError) returns null cleanly
+    (globalThis as any).window.showDirectoryPicker = vi.fn().mockRejectedValueOnce(
+      new DOMException('The user aborted a request.', 'AbortError')
+    );
+    const cancelledResult = await promptOpenDirectory();
+    expect(cancelledResult).toBeNull();
   });
 });

@@ -42,12 +42,22 @@ export async function storeDirectoryHandle(handle: FileSystemDirectoryHandle): P
       try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        const req = store.put(handle, HANDLE_KEY);
+        store.put(handle, HANDLE_KEY);
 
-        req.onsuccess = () => resolve(true);
-        req.onerror = () => resolve(false);
-        tx.onabort = () => resolve(false);
+        tx.oncomplete = () => {
+          db.close();
+          resolve(true);
+        };
+        tx.onerror = () => {
+          db.close();
+          resolve(false);
+        };
+        tx.onabort = () => {
+          db.close();
+          resolve(false);
+        };
       } catch {
+        db.close();
         resolve(false);
       }
     });
@@ -69,14 +79,23 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
 
         req.onsuccess = () => {
           const result = req.result;
+          db.close();
           if (result && typeof result === 'object' && 'kind' in result && result.kind === 'directory') {
             resolve(result as FileSystemDirectoryHandle);
           } else {
             resolve(null);
           }
         };
-        req.onerror = () => resolve(null);
+        req.onerror = () => {
+          db.close();
+          resolve(null);
+        };
+        tx.onabort = () => {
+          db.close();
+          resolve(null);
+        };
       } catch {
+        db.close();
         resolve(null);
       }
     });
@@ -94,10 +113,21 @@ export async function clearStoredDirectoryHandle(): Promise<void> {
       try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        const req = store.delete(HANDLE_KEY);
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
+        store.delete(HANDLE_KEY);
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          resolve();
+        };
+        tx.onabort = () => {
+          db.close();
+          resolve();
+        };
       } catch {
+        db.close();
         resolve();
       }
     });

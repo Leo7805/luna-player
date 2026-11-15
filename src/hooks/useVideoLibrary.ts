@@ -27,6 +27,9 @@ export function useVideoLibrary() {
 
   // Monotonic token to prevent asynchronous folder switching race conditions
   const scanVersionRef = useRef(0);
+  const libraryRef = useRef<VideoLibrary | null>(null);
+  libraryRef.current = library;
+  const isPickingRef = useRef(false);
 
   // Attempt to restore previously opened folder on startup
   useEffect(() => {
@@ -102,14 +105,35 @@ export function useVideoLibrary() {
   }, []);
 
   const openFolder = useCallback(async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
+
     try {
       const handle = await promptOpenDirectory();
-      if (!handle) return;
+      if (!handle) {
+        // User cancelled selection: preserve current folder and playlist untouched
+        return;
+      }
+
+      // Avoid unnecessary directory rescanning if the user selected the already-loaded folder
+      const existingHandle = libraryRef.current?.handle;
+      if (existingHandle && typeof existingHandle.isSameEntry === 'function') {
+        try {
+          if (await existingHandle.isSameEntry(handle)) {
+            return;
+          }
+        } catch {
+          // Ignore comparison failure and proceed with loading the selected directory
+        }
+      }
+
       await loadDirectory(handle);
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : 'Failed to select folder.'
       );
+    } finally {
+      isPickingRef.current = false;
     }
   }, [loadDirectory]);
 

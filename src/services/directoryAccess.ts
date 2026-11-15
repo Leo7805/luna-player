@@ -10,6 +10,7 @@ export async function promptOpenDirectory(): Promise<FileSystemDirectoryHandle |
 
   try {
     const handle = await window.showDirectoryPicker({
+      startIn: 'documents',
       mode: 'read',
     });
     return handle;
