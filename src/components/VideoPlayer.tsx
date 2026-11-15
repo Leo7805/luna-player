@@ -86,24 +86,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isInteractingWithControls, setIsInteractingWithControls] = useState(false);
   const [isFocusInside, setIsFocusInside] = useState(false);
   const hideControlsTimerRef = useRef<number | null>(null);
+  const wasControlsHiddenOnTouchRef = useRef(false);
+  const lastTouchStartAtRef = useRef(0);
+
+  const clearHideTimer = useCallback(() => {
+    if (hideControlsTimerRef.current) {
+      window.clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    }
+  }, []);
 
   const revealOverlay = useCallback(() => {
     setUserActive(true);
-    if (hideControlsTimerRef.current) {
-      window.clearTimeout(hideControlsTimerRef.current);
-    }
+    clearHideTimer();
+    const delayMs = isPlaying ? 2500 : 4000;
     hideControlsTimerRef.current = window.setTimeout(() => {
       setUserActive(false);
-    }, 2500);
-  }, []);
+    }, delayMs);
+  }, [isPlaying, clearHideTimer]);
 
   useEffect(() => {
     return () => {
-      if (hideControlsTimerRef.current) {
-        window.clearTimeout(hideControlsTimerRef.current);
-      }
+      clearHideTimer();
     };
-  }, []);
+  }, [clearHideTimer]);
+
+  // Restart inactivity timer on playback state or video changes, and pause timer while interacting/focused
+  useEffect(() => {
+    if (isInteractingWithControls || isFocusInside) {
+      setUserActive(true);
+      clearHideTimer();
+    } else {
+      revealOverlay();
+    }
+  }, [isPlaying, currentVideo?.id, isInteractingWithControls, isFocusInside, revealOverlay, clearHideTimer]);
 
   // Track Fullscreen API state changes
   useEffect(() => {
@@ -221,12 +237,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Controls stay visible when paused, ended, seeking/adjusting volume, focused, or showing an overlay state
+  const isVideoEnded = Boolean(videoRef.current?.ended);
+
+  // Controls stay visible while active, interacting, keyboard-focused, ended, autoplay-blocked, or in error/empty state
   const controlsVisible =
-    !isPlaying ||
     userActive ||
     isInteractingWithControls ||
     isFocusInside ||
+    isVideoEnded ||
     autoplayBlocked ||
     Boolean(playerError) ||
     !videoSrc;
@@ -238,11 +256,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       onMouseMove={revealOverlay}
       onMouseEnter={revealOverlay}
       onMouseLeave={() => {
-        if (isPlaying && !isInteractingWithControls && !isFocusInside) {
+        if (!isInteractingWithControls && !isFocusInside) {
+          clearHideTimer();
           setUserActive(false);
         }
       }}
-      onTouchStart={revealOverlay}
+      onTouchStart={() => {
+        wasControlsHiddenOnTouchRef.current = !controlsVisible;
+        lastTouchStartAtRef.current = Date.now();
+        revealOverlay();
+      }}
       onFocusCapture={handleContainerFocusCapture}
       onBlurCapture={handleContainerBlurCapture}
       style={
@@ -272,7 +295,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               controlsVisible ? 'cursor-pointer' : 'cursor-none'
             }`}
             onClick={() => {
+              const isTouchReveal =
+                wasControlsHiddenOnTouchRef.current &&
+                Date.now() - lastTouchStartAtRef.current < 800;
+              wasControlsHiddenOnTouchRef.current = false;
               revealOverlay();
+              if (isTouchReveal) {
+                return;
+              }
               if (videoSrc && !playerError) {
                 onTogglePlayPause();
               }
