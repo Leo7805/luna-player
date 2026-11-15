@@ -107,7 +107,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
     setPlayerError(null);
     setCurrentTime(0);
     setDuration(0);
-  }, [library?.id]);
+  }, [library]);
 
   // Synchronize persisted volume and mute state with the underlying video element
   useEffect(() => {

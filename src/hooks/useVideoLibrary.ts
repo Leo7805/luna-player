@@ -6,7 +6,8 @@ import {
   verifyHandlePermission,
   scanDirectoryHandle,
 } from '../services/directoryAccess';
-import { parseFileList } from '../services/fallbackAccess';
+import { parseFileList, parseSelectedFiles } from '../services/fallbackAccess';
+import { getDefaultOpenMode } from '../utils/platform';
 import {
   getStoredDirectoryHandle,
   storeDirectoryHandle,
@@ -185,6 +186,30 @@ export function useVideoLibrary() {
     }
   }, []);
 
+  const handleSelectedFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    scanVersionRef.current++;
+    setIsScanning(true);
+    setError(null);
+    setStoredHandlePrompt(null);
+
+    try {
+      const parsedLib = parseSelectedFiles(files);
+      if (parsedLib && parsedLib.flatPlaylist.length > 0) {
+        setLibrary(parsedLib);
+      } else {
+        setError('No supported video files were selected.');
+      }
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Error processing selected files.'
+      );
+    } finally {
+      setIsScanning(false);
+    }
+  }, []);
+
   return {
     library,
     isScanning,
@@ -195,6 +220,8 @@ export function useVideoLibrary() {
     reauthorizeStoredHandle,
     dismissStoredHandle,
     handleFallbackFiles,
+    handleSelectedFiles,
     isFsaSupported: isFileSystemAccessSupported(),
+    defaultOpenMode: getDefaultOpenMode(),
   };
 }

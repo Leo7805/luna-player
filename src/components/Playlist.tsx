@@ -34,6 +34,7 @@ export function Playlist({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalVideos = library.flatPlaylist.length;
+  const isFilesMode = library.sourceType === 'files';
   const isAllExpanded = manualExpandAll !== null ? manualExpandAll : totalVideos <= 50;
   const isFiltered = searchQuery.trim().length > 0;
 
@@ -103,12 +104,20 @@ export function Playlist({
             </Tooltip>
 
             {totalVideos > 0 && (
-              <Tooltip content="Extract Audio" placement="bottom">
+              <Tooltip
+                content={isFilesMode ? 'Extract Audio requires folder mode' : 'Extract Audio'}
+                placement="bottom"
+              >
                 <button
                   type="button"
-                  onClick={() => setIsExtractDialogOpen(true)}
-                  className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                  aria-label="Extract Audio"
+                  disabled={isFilesMode}
+                  onClick={() => {
+                    if (!isFilesMode) setIsExtractDialogOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 hover:bg-slate-200/60 dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-600 dark:disabled:hover:text-slate-300 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  aria-label={
+                    isFilesMode ? 'Extract Audio (requires folder mode)' : 'Extract Audio'
+                  }
                   data-testid="extract-audio-button"
                 >
                   <AudioLines className="h-4 w-4 shrink-0" />

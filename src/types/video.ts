@@ -26,7 +26,7 @@ export interface VideoLibrary {
   name: string; // Name of the selected root folder
   tree: FolderNode; // Root folder node
   flatPlaylist: VideoItem[]; // Deterministic DFS ordered playback list
-  sourceType: 'fs-access' | 'input-fallback';
+  sourceType: 'fs-access' | 'input-fallback' | 'files';
   handle?: FileSystemDirectoryHandle;
 }
 

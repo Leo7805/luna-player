@@ -9,6 +9,7 @@ import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { Tooltip } from './components/Tooltip';
 import { loadSettings, saveSettings } from './services/progressStorage';
+import { VideoLibrary } from './types/video';
 import { PanelRight } from 'lucide-react';
 
 export function App() {
@@ -28,7 +29,9 @@ export function App() {
     reauthorizeStoredHandle,
     dismissStoredHandle,
     handleFallbackFiles,
+    handleSelectedFiles,
     isFsaSupported,
+    defaultOpenMode,
   } = useVideoLibrary();
 
   const {
@@ -77,10 +80,10 @@ export function App() {
   }, [currentVideo, library]);
 
   // When a library is newly loaded, attempt to queue the last played video or the first video
-  const initialLoadRef = useRef<string | null>(null);
+  const initialLoadRef = useRef<VideoLibrary | null>(null);
   useEffect(() => {
-    if (library && library.flatPlaylist.length > 0 && initialLoadRef.current !== library.id) {
-      initialLoadRef.current = library.id;
+    if (library && library.flatPlaylist.length > 0 && initialLoadRef.current !== library) {
+      initialLoadRef.current = library;
 
       const settings = loadSettings();
       let targetVideo = library.flatPlaylist[0];
@@ -196,6 +199,8 @@ export function App() {
             library={library}
             onOpenFolder={openFolder}
             onFallbackSelect={handleFallbackFiles}
+            onOpenFilesSelect={handleSelectedFiles}
+            defaultOpenMode={defaultOpenMode}
             isFsaSupported={isFsaSupported}
             isScanning={isScanning}
             theme={theme}
@@ -326,6 +331,8 @@ export function App() {
             <EmptyState
               onOpenFolder={openFolder}
               onFallbackSelect={handleFallbackFiles}
+              onOpenFilesSelect={handleSelectedFiles}
+              defaultOpenMode={defaultOpenMode}
               isFsaSupported={isFsaSupported}
               isScanning={isScanning}
               scanCount={scanCount}

@@ -1,9 +1,12 @@
-import { useRef } from 'react';
-import { FolderOpen, ShieldCheck, Zap, Layers } from 'lucide-react';
+import { ShieldCheck, Zap, Layers } from 'lucide-react';
+import { OpenVideoMode } from '../utils/platform';
+import { OpenVideosControl } from './OpenVideosControl';
 
 interface EmptyStateProps {
   onOpenFolder: () => void;
   onFallbackSelect: (files: FileList | null) => void;
+  onOpenFilesSelect: (files: FileList | null) => void;
+  defaultOpenMode: OpenVideoMode;
   isFsaSupported: boolean;
   isScanning: boolean;
   scanCount: number;
@@ -13,39 +16,16 @@ interface EmptyStateProps {
 export function EmptyState({
   onOpenFolder,
   onFallbackSelect,
+  onOpenFilesSelect,
+  defaultOpenMode,
   isFsaSupported,
   isScanning,
   scanCount,
   error,
 }: EmptyStateProps) {
-  const fallbackInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleOpenClick = () => {
-    if (isFsaSupported) {
-      onOpenFolder();
-    } else {
-      fallbackInputRef.current?.click();
-    }
-  };
-
   return (
     <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
       <div className="max-w-xl w-full rounded-3xl glass-panel p-8 sm:p-10 shadow-2xl backdrop-blur-2xl text-center transition-colors duration-300">
-        {/* Hidden Fallback Input */}
-        <input
-          ref={fallbackInputRef}
-          type="file"
-          // @ts-expect-error webkitdirectory is standard in HTML5 directory inputs
-          webkitdirectory=""
-          directory=""
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            onFallbackSelect(e.target.files);
-            e.target.value = '';
-          }}
-        />
-
         {/* Brand Emblem */}
         <div className="relative mx-auto mb-6 flex items-center justify-center">
           <img
@@ -66,23 +46,16 @@ export function EmptyState({
 
         {/* Action Button */}
         <div className="flex flex-col items-center gap-3">
-          <button
-            onClick={handleOpenClick}
-            disabled={isScanning}
-            className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm shadow-xl shadow-sky-500/25 transition transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
-          >
-            <FolderOpen className="h-5 w-5" />
-            <span>{isScanning ? `Scanning folder (${scanCount} found)...` : 'Open Video Folder'}</span>
-          </button>
-
-          {isFsaSupported && (
-            <button
-              onClick={() => fallbackInputRef.current?.click()}
-              className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition underline underline-offset-4 cursor-pointer mt-1"
-            >
-              Or select via traditional folder picker
-            </button>
-          )}
+          <OpenVideosControl
+            variant="empty-state"
+            defaultOpenMode={defaultOpenMode}
+            isFsaSupported={isFsaSupported}
+            isScanning={isScanning}
+            scanCount={scanCount}
+            onOpenFolder={onOpenFolder}
+            onFallbackFolderSelect={onFallbackSelect}
+            onOpenFilesSelect={onOpenFilesSelect}
+          />
         </div>
 
         {/* Error message if present */}

@@ -11,8 +11,9 @@ import {
   saveSettings,
 } from '../src/services/progressStorage';
 import { buildFolderTree, flattenTreeToDfsPlaylist } from '../src/utils/videoTree';
-import { parseFileList } from '../src/services/fallbackAccess';
+import { parseFileList, parseSelectedFiles } from '../src/services/fallbackAccess';
 import { promptOpenDirectory } from '../src/services/directoryAccess';
+import { isIPadDevice, getDefaultOpenMode } from '../src/utils/platform';
 
 // In-memory localStorage mock for node environment
 const createLocalStorageMock = () => {
@@ -266,5 +267,58 @@ describe('Directory Picker & Switch Folder Configuration', () => {
     );
     const cancelledResult = await promptOpenDirectory();
     expect(cancelledResult).toBeNull();
+  });
+});
+
+describe('Platform Default Open Mode & Selected Files Parsing', () => {
+  it('selects folder mode for Windows and macOS desktop, and files mode for iPad (including iPadOS Macintosh UA)', () => {
+    expect(
+      getDefaultOpenMode({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        platform: 'Win32',
+        maxTouchPoints: 0,
+      })
+    ).toBe('folder');
+
+    expect(
+      getDefaultOpenMode({
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)',
+        platform: 'MacIntel',
+        maxTouchPoints: 0,
+      })
+    ).toBe('folder');
+
+    expect(
+      isIPadDevice({
+        userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)',
+        platform: 'iPad',
+        maxTouchPoints: 5,
+      })
+    ).toBe(true);
+
+    expect(
+      getDefaultOpenMode({
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+        platform: 'MacIntel',
+        maxTouchPoints: 5,
+      })
+    ).toBe('files');
+  });
+
+  it('groups individually selected files under Selected Videos with natural sorting and duplicate disambiguation', () => {
+    const files = [
+      { name: 'ep 10.mp4', size: 1000, lastModified: 10, type: 'video/mp4' } as unknown as File,
+      { name: 'ep 2.mp4', size: 900, lastModified: 20, type: 'video/mp4' } as unknown as File,
+      { name: 'ep 2.mp4', size: 1200, lastModified: 30, type: 'video/mp4' } as unknown as File,
+      { name: 'readme.txt', size: 50, lastModified: 40, type: 'text/plain' } as unknown as File,
+    ];
+
+    const lib = parseSelectedFiles(files);
+    expect(lib).not.toBeNull();
+    expect(lib?.name).toBe('Selected Videos');
+    expect(lib?.sourceType).toBe('files');
+    expect(lib?.flatPlaylist.length).toBe(3);
+    expect(lib?.flatPlaylist.map((v) => v.name)).toEqual(['ep 2.mp4', 'ep 2.mp4', 'ep 10.mp4']);
+    expect(new Set(lib?.flatPlaylist.map((v) => v.id)).size).toBe(3);
   });
 });
