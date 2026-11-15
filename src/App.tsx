@@ -9,6 +9,7 @@ import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { Tooltip } from './components/Tooltip';
 import { loadSettings, saveSettings } from './services/progressStorage';
+import { blurButtonAfterPointerClick } from './utils/shortcuts';
 import { VideoLibrary } from './types/video';
 import { PanelRight } from 'lucide-react';
 
@@ -330,7 +331,10 @@ export function App() {
                   <Tooltip content="Show Playlist" placement="left">
                     <button
                       type="button"
-                      onClick={() => handleSetPlaylistCollapsed(false)}
+                      onClick={(e) => {
+                        blurButtonAfterPointerClick(e);
+                        handleSetPlaylistCollapsed(false);
+                      }}
                       className="inline-flex items-center justify-center p-2 rounded-xl glass-button shadow-lg text-slate-800 dark:text-slate-200 hover:text-sky-600 dark:hover:text-sky-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer"
                       aria-label="Show Playlist"
                       data-testid="expand-playlist-button"

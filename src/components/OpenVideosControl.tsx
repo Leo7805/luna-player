@@ -3,6 +3,7 @@ import { FolderOpen, Film, MoreHorizontal } from 'lucide-react';
 import { OpenVideoMode } from '../utils/platform';
 import { VideoLibrary } from '../types/video';
 import { Tooltip } from './Tooltip';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface OpenVideosControlProps {
   variant: 'empty-state' | 'header';
@@ -29,14 +30,23 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement | null>(null);
+  const secondMenuItemRef = useRef<HTMLButtonElement | null>(null);
+  const openedMenuByKeyboardRef = useRef(false);
   const folderFallbackInputRef = useRef<HTMLInputElement | null>(null);
   const filesInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
 
+    if (openedMenuByKeyboardRef.current) {
+      firstMenuItemRef.current?.focus();
+    }
+
     const handlePointerDown = (e: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        openedMenuByKeyboardRef.current = false;
         setMenuOpen(false);
       }
     };
@@ -44,7 +54,15 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
+        const activeInsideMenu =
+          containerRef.current?.contains(document.activeElement) &&
+          (document.activeElement as HTMLElement | null)?.getAttribute('role') === 'menuitem';
+        const shouldRestoreFocus = openedMenuByKeyboardRef.current || Boolean(activeInsideMenu);
+        openedMenuByKeyboardRef.current = false;
         setMenuOpen(false);
+        if (shouldRestoreFocus) {
+          menuButtonRef.current?.focus();
+        }
       }
     };
 
@@ -55,6 +73,44 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [menuOpen]);
+
+  const handleMenuToggleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const isPointerClick = e.detail > 0;
+    if (isPointerClick) {
+      blurButtonAfterPointerClick(e);
+      openedMenuByKeyboardRef.current = false;
+    } else {
+      openedMenuByKeyboardRef.current = !menuOpen;
+    }
+    setMenuOpen((prev) => !prev);
+  };
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [firstMenuItemRef.current, secondMenuItemRef.current].filter(
+      (el): el is HTMLButtonElement => el !== null
+    );
+    if (items.length === 0) return;
+
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = items[(currentIndex + 1) % items.length];
+      next.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = items[(currentIndex - 1 + items.length) % items.length];
+      prev.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    } else if (e.key === 'Tab') {
+      openedMenuByKeyboardRef.current = false;
+      setMenuOpen(false);
+    }
+  };
 
   const triggerOpenFolder = () => {
     setMenuOpen(false);
@@ -116,7 +172,10 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
         <>
           <button
             type="button"
-            onClick={triggerDefaultOpen}
+            onClick={(e) => {
+              blurButtonAfterPointerClick(e);
+              triggerDefaultOpen();
+            }}
             disabled={isScanning}
             data-testid="open-videos-button"
             className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm shadow-xl shadow-sky-500/25 transition transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
@@ -133,8 +192,9 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
 
           <Tooltip content="More opening options" placement="bottom" disabled={menuOpen}>
             <button
+              ref={menuButtonRef}
               type="button"
-              onClick={() => setMenuOpen((prev) => !prev)}
+              onClick={handleMenuToggleClick}
               disabled={isScanning}
               aria-label="More opening options"
               aria-haspopup="menu"
@@ -160,7 +220,10 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
             >
               <button
                 type="button"
-                onClick={triggerDefaultOpen}
+                onClick={(e) => {
+                  blurButtonAfterPointerClick(e);
+                  triggerDefaultOpen();
+                }}
                 disabled={isScanning}
                 className="group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full glass-panel-subtle text-xs border border-slate-300/80 dark:border-white/15 hover:bg-slate-200/70 dark:hover:bg-white/10 hover:border-sky-500/40 dark:hover:border-sky-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer disabled:opacity-50 min-w-0 max-w-full"
                 aria-label="Open Videos"
@@ -197,8 +260,9 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
 
             <Tooltip content="More opening options" placement="bottom" disabled={menuOpen}>
               <button
+                ref={menuButtonRef}
                 type="button"
-                onClick={() => setMenuOpen((prev) => !prev)}
+                onClick={handleMenuToggleClick}
                 disabled={isScanning}
                 aria-label="More opening options"
                 aria-haspopup="menu"
@@ -218,27 +282,38 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
         <div
           role="menu"
           data-testid={`${variant}-open-menu`}
+          onKeyDown={handleMenuKeyDown}
           className={`absolute z-50 mt-2 w-44 rounded-xl glass-panel border border-slate-300/80 dark:border-white/15 shadow-2xl py-1.5 backdrop-blur-xl ${
             variant === 'empty-state' ? 'left-1/2 -translate-x-1/2 top-full' : 'right-0 top-full'
           }`}
         >
           <button
+            ref={firstMenuItemRef}
             type="button"
             role="menuitem"
             data-testid={`${variant}-menu-open-folder`}
-            onClick={triggerOpenFolder}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 hover:text-sky-700 dark:hover:text-sky-300 transition cursor-pointer text-left"
+            onClick={(e) => {
+              blurButtonAfterPointerClick(e);
+              openedMenuByKeyboardRef.current = false;
+              triggerOpenFolder();
+            }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 hover:text-sky-700 dark:hover:text-sky-300 focus:outline-none focus-visible:bg-sky-500/15 focus-visible:text-sky-700 dark:focus-visible:text-sky-300 transition cursor-pointer text-left"
           >
             <FolderOpen className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
             <span>Open Folder</span>
           </button>
 
           <button
+            ref={secondMenuItemRef}
             type="button"
             role="menuitem"
             data-testid={`${variant}-menu-open-files`}
-            onClick={triggerOpenFiles}
-            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 hover:text-sky-700 dark:hover:text-sky-300 transition cursor-pointer text-left"
+            onClick={(e) => {
+              blurButtonAfterPointerClick(e);
+              openedMenuByKeyboardRef.current = false;
+              triggerOpenFiles();
+            }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-sky-500/15 hover:text-sky-700 dark:hover:text-sky-300 focus:outline-none focus-visible:bg-sky-500/15 focus-visible:text-sky-700 dark:focus-visible:text-sky-300 transition cursor-pointer text-left"
           >
             <Film className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
             <span>Open Files</span>

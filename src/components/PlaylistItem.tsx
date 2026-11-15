@@ -3,6 +3,7 @@ import { Play, CheckCircle2 } from 'lucide-react';
 import { VideoItem } from '../types/video';
 import { getVideoProgress } from '../services/progressStorage';
 import { formatDuration, formatFileSize } from '../utils/formatters';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface PlaylistItemProps {
   video: VideoItem;
@@ -46,7 +47,11 @@ export function PlaylistItem({
   return (
     <button
       ref={itemRef}
-      onClick={() => onSelect(video)}
+      type="button"
+      onClick={(e) => {
+        blurButtonAfterPointerClick(e);
+        onSelect(video);
+      }}
       className={`w-full group text-left px-3 py-2 rounded-xl text-xs transition cursor-pointer flex items-center justify-between gap-3 border ${
         isActive
           ? 'bg-sky-100/90 dark:bg-sky-500/20 border-sky-400 dark:border-sky-500/40 text-sky-950 dark:text-white font-semibold shadow-sm'

@@ -428,13 +428,15 @@ export function usePlayback({ library }: UsePlaybackProps) {
     }
   }, [attemptPlay]);
 
-  const togglePlayPause = useCallback(() => {
+  const togglePlayPause = useCallback((): 'play' | 'pause' | null => {
     const videoEl = videoRef.current;
-    if (!videoEl || !currentVideoRef.current) return;
+    if (!videoEl || !currentVideoRef.current) return null;
     if (videoEl.paused || videoEl.ended) {
       attemptPlay(videoEl, activeSelectionTokenRef.current);
+      return 'play';
     } else {
       videoEl.pause();
+      return 'pause';
     }
   }, [attemptPlay]);
 
@@ -452,24 +454,28 @@ export function usePlayback({ library }: UsePlaybackProps) {
   }, []);
 
   const seekBy = useCallback(
-    (deltaSeconds: number) => {
+    (deltaSeconds: number): boolean => {
       const videoEl = videoRef.current;
-      if (!videoEl || !Number.isFinite(deltaSeconds)) return;
+      if (!videoEl || !Number.isFinite(deltaSeconds)) return false;
       const baseTime = Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
       seekTo(baseTime + deltaSeconds);
+      return true;
     },
     [seekTo]
   );
 
-  const seekToStart = useCallback(() => {
+  const seekToStart = useCallback((): boolean => {
+    if (!videoRef.current) return false;
     seekTo(0);
+    return true;
   }, [seekTo]);
 
-  const seekToEnd = useCallback(() => {
+  const seekToEnd = useCallback((): boolean => {
     const videoEl = videoRef.current;
-    if (!videoEl) return;
+    if (!videoEl) return false;
     const maxTime = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
     seekTo(Math.max(0, maxTime - END_SEEK_OFFSET_SECONDS));
+    return true;
   }, [seekTo]);
 
   const applyPlaybackRate = useCallback((targetRate: number): number => {
@@ -551,7 +557,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
   }, []);
 
   const adjustVolume = useCallback(
-    (direction: -1 | 1) => {
+    (direction: -1 | 1): number => {
       const { step, min, max } = DEFAULT_CONTROL_SETTINGS.volume;
       const currentVol =
         videoRef.current && Number.isFinite(videoRef.current.volume)
@@ -563,16 +569,21 @@ export function usePlayback({ library }: UsePlaybackProps) {
       }
       setVolumeState(nextVolume);
       setMutedState(false);
+      let appliedVolume = nextVolume;
       if (videoRef.current) {
         videoRef.current.muted = false;
         videoRef.current.volume = nextVolume;
+        if (Number.isFinite(videoRef.current.volume)) {
+          appliedVolume = videoRef.current.volume;
+        }
       }
-      saveSettings({ volume: nextVolume, muted: false });
+      saveSettings({ volume: appliedVolume, muted: false });
+      return appliedVolume;
     },
     []
   );
 
-  const toggleMute = useCallback(() => {
+  const toggleMute = useCallback((): { muted: boolean; volume: number } => {
     const isEffectivelyMuted =
       mutedRef.current || volumeRef.current <= DEFAULT_CONTROL_SETTINGS.volume.min;
 
@@ -584,12 +595,16 @@ export function usePlayback({ library }: UsePlaybackProps) {
       lastAudibleVolumeRef.current = restoredVolume;
       setMutedState(false);
       setVolumeState(restoredVolume);
+      let appliedVolume = restoredVolume;
       if (videoRef.current) {
         videoRef.current.muted = false;
         videoRef.current.volume = restoredVolume;
+        if (Number.isFinite(videoRef.current.volume)) {
+          appliedVolume = videoRef.current.volume;
+        }
       }
-      saveSettings({ muted: false, volume: restoredVolume });
-      return;
+      saveSettings({ muted: false, volume: appliedVolume });
+      return { muted: false, volume: appliedVolume };
     }
 
     lastAudibleVolumeRef.current = volumeRef.current;
@@ -598,6 +613,7 @@ export function usePlayback({ library }: UsePlaybackProps) {
       videoRef.current.muted = true;
     }
     saveSettings({ muted: true });
+    return { muted: true, volume: volumeRef.current };
   }, []);
 
   const handleVolumeChange = useCallback(() => {

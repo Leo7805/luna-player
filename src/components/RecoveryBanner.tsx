@@ -1,5 +1,6 @@
 import { AlertCircle, FolderCheck, X } from 'lucide-react';
 import { StoredHandlePrompt } from '../hooks/useVideoLibrary';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface RecoveryBannerProps {
   prompt: StoredHandlePrompt;
@@ -26,14 +27,22 @@ export function RecoveryBanner({ prompt, onGrant, onDismiss }: RecoveryBannerPro
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
-            onClick={onGrant}
+            type="button"
+            onClick={(e) => {
+              blurButtonAfterPointerClick(e);
+              onGrant();
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 text-slate-950 font-medium text-xs hover:bg-sky-400 transition cursor-pointer shadow"
           >
             <FolderCheck className="h-3.5 w-3.5" />
             <span>Grant Access</span>
           </button>
           <button
-            onClick={onDismiss}
+            type="button"
+            onClick={(e) => {
+              blurButtonAfterPointerClick(e);
+              onDismiss();
+            }}
             className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-black/5 dark:hover:bg-white/10 transition cursor-pointer"
             title="Dismiss remembered folder"
           >

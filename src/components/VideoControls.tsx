@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatDuration } from '../utils/formatters';
 import { Tooltip } from './Tooltip';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 interface VideoControlsProps {
   visible: boolean;
@@ -141,7 +142,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             <button
               type="button"
               data-testid="play-pause-button"
-              onClick={onTogglePlayPause}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onTogglePlayPause();
+              }}
               aria-label={isPlaying ? 'Pause' : 'Play'}
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
@@ -172,7 +176,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             <button
               type="button"
               data-testid="prev-video-button"
-              onClick={onPlayPrevious}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onPlayPrevious();
+              }}
               disabled={!hasPrevious}
               aria-label="Previous episode"
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
@@ -189,7 +196,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             <button
               type="button"
               data-testid="next-video-button"
-              onClick={onPlayNext}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onPlayNext();
+              }}
               disabled={!hasNext}
               aria-label="Next episode"
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
@@ -209,7 +219,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             <button
               type="button"
               data-testid="mute-toggle-button"
-              onClick={onToggleMute}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onToggleMute();
+              }}
               aria-label={muted || effectiveVolume === 0 ? 'Unmute' : 'Mute'}
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
@@ -244,7 +257,10 @@ export const VideoControls: React.FC<VideoControlsProps> = ({
             <button
               type="button"
               data-testid="fullscreen-toggle-button"
-              onClick={onToggleFullscreen}
+              onClick={(e) => {
+                blurButtonAfterPointerClick(e);
+                onToggleFullscreen();
+              }}
               aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
               className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border-0 shadow-none text-white/90 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >

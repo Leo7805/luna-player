@@ -8,12 +8,23 @@ import {
 import { VideoItem } from '../types/video';
 import { VideoControls } from './VideoControls';
 import { Tooltip } from './Tooltip';
+import { FeedbackHud } from './FeedbackHud';
 import { DEFAULT_CONTROL_SETTINGS } from '../config/controlSettings';
 import {
   resolveShortcutAction,
   isInteractiveOrEditableTarget,
   hasBlockingModalOpen,
+  blurButtonAfterPointerClick,
 } from '../utils/shortcuts';
+import {
+  accumulateSeek,
+  formatPlaybackRate,
+  formatSeekSeconds,
+  formatVolumePercent,
+  type FeedbackIcon,
+  type FeedbackMessage,
+  type SeekAccumulatorState,
+} from '../utils/feedbackHud';
 
 interface VideoPlayerProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -34,19 +45,19 @@ interface VideoPlayerProps {
   isTheaterMode: boolean;
   onToggleTheaterMode: () => void;
   onToggleAutoplayNext: () => void;
-  onTogglePlayPause: () => void;
+  onTogglePlayPause: () => 'play' | 'pause' | null | void;
   onSeek: (time: number) => void;
-  onSeekBy: (deltaSeconds: number) => void;
-  onSeekToStart: () => void;
-  onSeekToEnd: () => void;
-  onAdjustPlaybackRate: (direction: -1 | 1) => void;
-  onToggleMaxPlaybackRate: () => void;
+  onSeekBy: (deltaSeconds: number) => boolean | void;
+  onSeekToStart: () => boolean | void;
+  onSeekToEnd: () => boolean | void;
+  onAdjustPlaybackRate: (direction: -1 | 1) => number;
+  onToggleMaxPlaybackRate: () => number;
   onNativeRateChange: () => void;
   onPlayNext: () => void;
   onPlayPrevious: () => void;
-  onToggleMute: () => void;
+  onToggleMute: () => { muted: boolean; volume: number } | void;
   onVolumeChange: (volume: number) => void;
-  onAdjustVolume: (direction: -1 | 1) => void;
+  onAdjustVolume: (direction: -1 | 1) => number;
   onNativeVolumeChange: () => void;
   onLoadedMetadata: () => void;
   onTimeUpdate: () => void;
@@ -108,6 +119,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const hideControlsTimerRef = useRef<number | null>(null);
   const wasControlsHiddenOnTouchRef = useRef(false);
   const lastTouchStartAtRef = useRef(0);
+  const [hudFeedback, setHudFeedback] = useState<FeedbackMessage | null>(null);
+  const hudIdRef = useRef(0);
+  const seekAccumulatorRef = useRef<SeekAccumulatorState | null>(null);
+
+  const showHud = useCallback((icon: FeedbackIcon, label: string) => {
+    setHudFeedback({ id: ++hudIdRef.current, icon, label });
+  }, []);
+
+  const handleDismissHud = useCallback(() => {
+    setHudFeedback(null);
+  }, []);
 
   const clearHideTimer = useCallback(() => {
     if (hideControlsTimerRef.current) {
@@ -191,53 +213,102 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       const { seek } = DEFAULT_CONTROL_SETTINGS;
 
+      const handleRelativeSeek = (deltaSeconds: number) => {
+        const didSeek = onSeekBy(deltaSeconds);
+        if (didSeek !== false) {
+          const accumulated = accumulateSeek(seekAccumulatorRef.current, deltaSeconds, Date.now());
+          seekAccumulatorRef.current = accumulated;
+          showHud(
+            accumulated.totalSeconds >= 0 ? 'fast-forward' : 'rewind',
+            formatSeekSeconds(accumulated.totalSeconds)
+          );
+        }
+      };
+
       switch (resolved.action) {
-        case 'toggle-playback':
-          onTogglePlayPause();
+        case 'toggle-playback': {
+          seekAccumulatorRef.current = null;
+          const result = onTogglePlayPause();
+          if (result === 'play') {
+            showHud('play', 'Playing');
+          } else if (result === 'pause') {
+            showHud('pause', 'Paused');
+          }
           break;
-        case 'decrease-playback-rate':
-          onAdjustPlaybackRate(-1);
+        }
+        case 'decrease-playback-rate': {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onAdjustPlaybackRate(-1);
+          showHud('speed', formatPlaybackRate(appliedRate));
           break;
-        case 'increase-playback-rate':
-          onAdjustPlaybackRate(1);
+        }
+        case 'increase-playback-rate': {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onAdjustPlaybackRate(1);
+          showHud('speed', formatPlaybackRate(appliedRate));
           break;
-        case 'toggle-max-playback-rate':
-          onToggleMaxPlaybackRate();
+        }
+        case 'toggle-max-playback-rate': {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onToggleMaxPlaybackRate();
+          showHud('speed', formatPlaybackRate(appliedRate));
           break;
-        case 'decrease-volume':
-          onAdjustVolume(-1);
+        }
+        case 'decrease-volume': {
+          seekAccumulatorRef.current = null;
+          const appliedVolume = onAdjustVolume(-1);
+          showHud('volume-down', formatVolumePercent(appliedVolume));
           break;
-        case 'increase-volume':
-          onAdjustVolume(1);
+        }
+        case 'increase-volume': {
+          seekAccumulatorRef.current = null;
+          const appliedVolume = onAdjustVolume(1);
+          showHud('volume-up', formatVolumePercent(appliedVolume));
           break;
-        case 'toggle-muted':
-          onToggleMute();
+        }
+        case 'toggle-muted': {
+          seekAccumulatorRef.current = null;
+          const muteResult = onToggleMute();
+          if (muteResult) {
+            showHud(
+              muteResult.muted ? 'volume-muted' : 'volume-up',
+              muteResult.muted ? 'Muted' : formatVolumePercent(muteResult.volume)
+            );
+          }
           break;
+        }
         case 'seek-backward-fine':
-          onSeekBy(-seek.fineSeconds);
+          handleRelativeSeek(-seek.fineSeconds);
           break;
         case 'seek-forward-fine':
-          onSeekBy(seek.fineSeconds);
+          handleRelativeSeek(seek.fineSeconds);
           break;
         case 'seek-backward':
-          onSeekBy(-seek.nearSeconds);
+          handleRelativeSeek(-seek.nearSeconds);
           break;
         case 'seek-forward':
-          onSeekBy(seek.nearSeconds);
+          handleRelativeSeek(seek.nearSeconds);
           break;
         case 'seek-backward-far':
-          onSeekBy(-seek.farSeconds);
+          handleRelativeSeek(-seek.farSeconds);
           break;
         case 'seek-forward-far':
-          onSeekBy(seek.farSeconds);
+          handleRelativeSeek(seek.farSeconds);
           break;
         case 'seek-start':
-          onSeekToStart();
+          seekAccumulatorRef.current = null;
+          if (onSeekToStart() !== false) {
+            showHud('rewind', 'Start');
+          }
           break;
         case 'seek-end':
-          onSeekToEnd();
+          seekAccumulatorRef.current = null;
+          if (onSeekToEnd() !== false) {
+            showHud('fast-forward', 'End');
+          }
           break;
         case 'toggle-fullscreen':
+          seekAccumulatorRef.current = null;
           toggleFullscreen();
           break;
       }
@@ -261,6 +332,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     onToggleMute,
     toggleFullscreen,
     revealOverlay,
+    showHud,
   ]);
 
   const handleContainerFocusCapture = (e: React.FocusEvent<HTMLDivElement>) => {
@@ -366,6 +438,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             playsInline
           />
 
+          <FeedbackHud feedback={hudFeedback} onDismiss={handleDismissHud} />
+
           {/* Top Overlay Bar: Top-Left (1 of N + Relative Path) and Top-Right (Theater Mode + Autoplay On/Off) */}
           <div
             data-testid="video-top-overlay"
@@ -407,7 +481,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <button
                   type="button"
                   data-testid="theater-mode-button"
-                  onClick={onToggleTheaterMode}
+                  onClick={(e) => {
+                    blurButtonAfterPointerClick(e);
+                    onToggleTheaterMode();
+                  }}
                   aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
                   aria-pressed={isTheaterMode}
                   className={`p-2 rounded-lg bg-transparent border-0 shadow-none transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
@@ -428,7 +505,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <button
                   type="button"
                   data-testid="autoplay-toggle-button"
-                  onClick={onToggleAutoplayNext}
+                  onClick={(e) => {
+                    blurButtonAfterPointerClick(e);
+                    onToggleAutoplayNext();
+                  }}
                   aria-label={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
                   aria-pressed={autoplayNext}
                   className={`p-2 rounded-lg bg-transparent border-0 shadow-none transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
@@ -492,7 +572,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 z-10">
               <button
                 type="button"
-                onClick={onManualPlay}
+                onClick={(e) => {
+                  blurButtonAfterPointerClick(e);
+                  onManualPlay();
+                }}
                 className="group/btn flex flex-col items-center gap-3 p-6 rounded-2xl bg-slate-900/90 hover:bg-indigo-600/90 border border-slate-700/80 hover:border-indigo-400/50 text-white shadow-2xl transition-all duration-200 cursor-pointer transform hover:scale-105"
               >
                 <div className="w-16 h-16 rounded-full bg-indigo-500 group-hover/btn:bg-white group-hover/btn:text-indigo-600 flex items-center justify-center shadow-lg transition-colors">

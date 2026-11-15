@@ -46,3 +46,15 @@ export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
 
 export const END_SEEK_OFFSET_SECONDS = 0.5;
 export const PLAYBACK_RATE_EPSILON = 0.001;
+
+export interface FeedbackTimingSettings {
+  accumulationWindowMs: number;
+  displayDurationMs: number;
+  fadeDurationMs: number;
+}
+
+export const DEFAULT_FEEDBACK_TIMING: FeedbackTimingSettings = {
+  accumulationWindowMs: 1000,
+  displayDurationMs: 600,
+  fadeDurationMs: 400,
+};

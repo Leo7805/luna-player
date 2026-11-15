@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { FolderNode, VideoItem } from '../types/video';
 import { PlaylistItem } from './PlaylistItem';
+import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
 export interface ExpansionOverride {
   version: number;
@@ -91,7 +92,11 @@ export function PlaylistFolder({
       {/* Folder Header (Omit for virtual root) */}
       {folder.relativePath !== '' && (
         <button
-          onClick={() => setIsExpanded((prev) => !prev)}
+          type="button"
+          onClick={(e) => {
+            blurButtonAfterPointerClick(e);
+            setIsExpanded((prev) => !prev);
+          }}
           className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/5 transition cursor-pointer"
           style={{ paddingLeft: `${Math.max(10, depth * 16)}px` }}
         >

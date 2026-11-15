@@ -199,6 +199,16 @@ describe('Target and modal guards', () => {
     expect(isInteractiveOrEditableTarget(makeMockElement('SPAN', false, true) as unknown as EventTarget)).toBe(true);
     expect(isInteractiveOrEditableTarget(makeMockElement('DIV', false, false) as unknown as EventTarget)).toBe(false);
     expect(isInteractiveOrEditableTarget(null)).toBe(false);
+
+    // Search inputs, sliders, and menu items must suppress global video shortcuts
+    const makeClosestMock = (matchedSelector: string) => ({
+      tagName: 'DIV',
+      isContentEditable: false,
+      closest: (selector: string) => (selector.includes(matchedSelector) ? {} : null),
+    });
+    expect(isInteractiveOrEditableTarget(makeClosestMock('[role="slider"]') as unknown as EventTarget)).toBe(true);
+    expect(isInteractiveOrEditableTarget(makeClosestMock('[role="menu"]') as unknown as EventTarget)).toBe(true);
+    expect(isInteractiveOrEditableTarget(makeClosestMock('[role="menuitem"]') as unknown as EventTarget)).toBe(true);
   });
 
   it('detects blocking modals regardless of focus', () => {
