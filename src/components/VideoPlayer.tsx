@@ -1,58 +1,112 @@
-import { RefObject, useState, useEffect, useRef, useCallback } from 'react';
-import { Play, AlertTriangle, Expand, Shrink } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Play,
+  AlertCircle,
+  Film,
+  Tv,
+  Minimize2,
+  ListVideo,
+} from 'lucide-react';
 import { VideoItem } from '../types/video';
+import { VideoControls } from './VideoControls';
 
 interface VideoPlayerProps {
-  videoRef: RefObject<HTMLVideoElement | null>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   currentVideo: VideoItem | null;
   videoSrc: string | null;
   isPlaying: boolean;
   autoplayBlocked: boolean;
   playerError: string | null;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  muted: boolean;
+  currentIndex: number;
+  totalCount: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  autoplayNext: boolean;
   isTheaterMode: boolean;
+  onToggleTheaterMode: () => void;
+  onToggleAutoplayNext: () => void;
+  onTogglePlayPause: () => void;
+  onSeek: (time: number) => void;
+  onPlayNext: () => void;
+  onPlayPrevious: () => void;
+  onToggleMute: () => void;
+  onVolumeChange: (volume: number) => void;
+  onNativeVolumeChange: () => void;
   onLoadedMetadata: () => void;
   onTimeUpdate: () => void;
   onPlay: () => void;
   onPause: () => void;
   onSeeked: () => void;
-  onVideoError: () => void;
+  onError: () => void;
   onEnded: () => void;
   onManualPlay: () => void;
 }
 
-export function VideoPlayer({
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoRef,
   currentVideo,
   videoSrc,
   isPlaying,
   autoplayBlocked,
   playerError,
+  currentTime,
+  duration,
+  volume,
+  muted,
+  currentIndex,
+  totalCount,
+  hasNext,
+  hasPrevious,
+  autoplayNext,
   isTheaterMode,
+  onToggleTheaterMode,
+  onToggleAutoplayNext,
+  onTogglePlayPause,
+  onSeek,
+  onPlayNext,
+  onPlayPrevious,
+  onToggleMute,
+  onVolumeChange,
+  onNativeVolumeChange,
   onLoadedMetadata,
   onTimeUpdate,
   onPlay,
   onPause,
   onSeeked,
-  onVideoError,
+  onError,
   onEnded,
   onManualPlay,
-}: VideoPlayerProps) {
-  const [showOverlay, setShowOverlay] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isFocusedInOverlay, setIsFocusedInOverlay] = useState(false);
-
-  const hideTimerRef = useRef<number | null>(null);
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [userActive, setUserActive] = useState(true);
+  const [isInteractingWithControls, setIsInteractingWithControls] = useState(false);
+  const [isFocusInside, setIsFocusInside] = useState(false);
+  const hideControlsTimerRef = useRef<number | null>(null);
 
-  // Helper to check if video is actually playing
-  const isVideoPlaying = useCallback(() => {
-    if (videoRef.current) {
-      return !videoRef.current.paused && !videoRef.current.ended;
+  const revealOverlay = useCallback(() => {
+    setUserActive(true);
+    if (hideControlsTimerRef.current) {
+      window.clearTimeout(hideControlsTimerRef.current);
     }
-    return isPlaying;
-  }, [isPlaying, videoRef]);
+    hideControlsTimerRef.current = window.setTimeout(() => {
+      setUserActive(false);
+    }, 2500);
+  }, []);
 
-  // Monitor fullscreen change events
+  useEffect(() => {
+    return () => {
+      if (hideControlsTimerRef.current) {
+        window.clearTimeout(hideControlsTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Track Fullscreen API state changes
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
@@ -64,183 +118,297 @@ export function VideoPlayer({
     };
   }, []);
 
-  const clearHideTimer = () => {
-    if (hideTimerRef.current !== null) {
-      window.clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
-  };
+  const toggleFullscreen = useCallback(async () => {
+    const el = containerRef.current;
+    if (!el) return;
 
-  const scheduleHideTimer = useCallback(() => {
-    clearHideTimer();
-    // Auto-hide after 2.5s if currently playing and not actively keyboard focused
-    if (isVideoPlaying() && !isFocusedInOverlay) {
-      hideTimerRef.current = window.setTimeout(() => {
-        setShowOverlay(false);
-      }, 2500);
-    }
-  }, [isVideoPlaying, isFocusedInOverlay]);
-
-  const handlePointerActivity = useCallback(() => {
-    setShowOverlay(true);
-    scheduleHideTimer();
-  }, [scheduleHideTimer]);
-
-  const handleContainerMouseLeave = () => {
-    // If playing and focus is not inside overlay, hide promptly
-    if (isVideoPlaying() && !isFocusedInOverlay) {
-      clearHideTimer();
-      setShowOverlay(false);
-    }
-  };
-
-  // State synchronization when play/pause status or focus changes
-  useEffect(() => {
-    if (!isVideoPlaying() || isFocusedInOverlay) {
-      clearHideTimer();
-      setShowOverlay(true);
-    } else {
-      scheduleHideTimer();
-    }
-    return () => clearHideTimer();
-  }, [isPlaying, isVideoPlaying, isFocusedInOverlay, scheduleHideTimer]);
-
-  const handleToggleFullscreen = async () => {
     try {
-      const container = containerRef.current;
-      if (!container) return;
-
       if (!document.fullscreenElement) {
-        if (container.requestFullscreen) {
-          await container.requestFullscreen();
-        } else if ((container as any).webkitRequestFullscreen) {
-          await (container as any).webkitRequestFullscreen();
-        }
+        await el.requestFullscreen();
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        }
+        await document.exitFullscreen();
       }
     } catch {
-      // Fallback or permission rejection
+      // Fallback if container fullscreen fails on specific mobile browsers
+      if (videoRef.current && 'webkitEnterFullscreen' in videoRef.current) {
+        try {
+          (videoRef.current as unknown as { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  }, [videoRef]);
+
+  // Keyboard shortcuts (guarded so focused sliders, buttons, inputs, or dialogs are never hijacked)
+  useEffect(() => {
+    if (!currentVideo) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        if (target.closest('[role="dialog"]')) return;
+        const tagName = target.tagName;
+        if (
+          tagName === 'INPUT' ||
+          tagName === 'TEXTAREA' ||
+          tagName === 'SELECT' ||
+          tagName === 'BUTTON' ||
+          tagName === 'SUMMARY' ||
+          target.isContentEditable ||
+          target.closest('button, input, textarea, select, summary, [contenteditable="true"]')
+        ) {
+          return;
+        }
+      }
+
+      if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        onTogglePlayPause();
+        revealOverlay();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        onSeek(Math.max(0, currentTime - 5));
+        revealOverlay();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        onSeek(Math.min(duration || 0, currentTime + 5));
+        revealOverlay();
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        onToggleMute();
+        revealOverlay();
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+        revealOverlay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [
+    currentVideo,
+    currentTime,
+    duration,
+    onTogglePlayPause,
+    onSeek,
+    onToggleMute,
+    toggleFullscreen,
+    revealOverlay,
+  ]);
+
+  const handleContainerFocusCapture = () => {
+    setIsFocusInside(true);
+    revealOverlay();
+  };
+
+  const handleContainerBlurCapture = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsFocusInside(false);
     }
   };
+
+  // Controls stay visible when paused, ended, seeking/adjusting volume, focused, or showing an overlay state
+  const controlsVisible =
+    !isPlaying ||
+    userActive ||
+    isInteractingWithControls ||
+    isFocusInside ||
+    autoplayBlocked ||
+    Boolean(playerError) ||
+    !videoSrc;
 
   return (
     <div
       ref={containerRef}
-      onMouseMove={handlePointerActivity}
-      onMouseEnter={handlePointerActivity}
-      onMouseLeave={handleContainerMouseLeave}
-      className={`relative w-full rounded-2xl overflow-hidden shadow-2xl bg-slate-950 flex items-center justify-center border border-white/10 group transition-all duration-300 ${
-        isTheaterMode
-          ? 'h-[55vh] sm:h-[70vh] lg:h-[78vh] max-h-[85vh]'
-          : 'h-[360px] sm:h-[460px] lg:h-[520px] max-h-[70vh]'
+      data-testid="video-player-container"
+      onMouseMove={revealOverlay}
+      onMouseEnter={revealOverlay}
+      onMouseLeave={() => {
+        if (isPlaying && !isInteractingWithControls && !isFocusInside) {
+          setUserActive(false);
+        }
+      }}
+      onTouchStart={revealOverlay}
+      onFocusCapture={handleContainerFocusCapture}
+      onBlurCapture={handleContainerBlurCapture}
+      style={
+        !isFullscreen && !isTheaterMode
+          ? {
+              maxHeight: 'var(--player-max-h)',
+              maxWidth: 'min(100%, calc(var(--player-max-h) * 16 / 9))',
+            }
+          : undefined
+      }
+      className={`bg-black overflow-hidden flex items-center justify-center group select-none ${
+        currentVideo && !controlsVisible ? 'cursor-none ' : ''
+      }${
+        isFullscreen
+          ? 'relative w-screen h-screen max-w-none max-h-none rounded-none border-none'
+          : isTheaterMode
+          ? 'fixed inset-0 z-50 w-dvw h-dvh max-w-none max-h-none rounded-none border-none'
+          : 'relative w-full mx-auto aspect-video rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800/80'
       }`}
     >
-      <video
-        ref={videoRef}
-        src={videoSrc || undefined}
-        controls
-        playsInline
-        className={`w-full h-full object-contain mx-auto my-auto ${videoSrc ? '' : 'hidden'}`}
-        onLoadedMetadata={onLoadedMetadata}
-        onTimeUpdate={onTimeUpdate}
-        onPlay={onPlay}
-        onPause={onPause}
-        onSeeked={onSeeked}
-        onError={onVideoError}
-        onEnded={onEnded}
-      />
-      {!videoSrc && (
-        <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400">
-          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-3 text-slate-500 border border-white/10">
-            <Play className="h-7 w-7 ml-1" />
-          </div>
-          <p className="text-sm font-medium text-slate-300">Select a video from the playlist to play</p>
-          <p className="text-xs text-slate-500 mt-1">Playback is kept strictly local in your browser</p>
-        </div>
-      )}
+      {currentVideo ? (
+        <>
+          <video
+            ref={videoRef}
+            src={videoSrc || undefined}
+            className={`w-full h-full object-contain bg-black ${
+              controlsVisible ? 'cursor-pointer' : 'cursor-none'
+            }`}
+            onClick={() => {
+              revealOverlay();
+              if (videoSrc && !playerError) {
+                onTogglePlayPause();
+              }
+            }}
+            onDoubleClick={toggleFullscreen}
+            onLoadedMetadata={onLoadedMetadata}
+            onTimeUpdate={onTimeUpdate}
+            onPlay={onPlay}
+            onPause={onPause}
+            onSeeked={onSeeked}
+            onVolumeChange={onNativeVolumeChange}
+            onError={onError}
+            onEnded={onEnded}
+            playsInline
+          />
 
-      {/* Autoplay Blocked Overlay */}
-      {autoplayBlocked && (
-        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 transition-opacity">
-          <button
-            onClick={onManualPlay}
-            className="flex items-center gap-3 px-6 py-3 rounded-full bg-sky-500 text-slate-950 font-semibold text-base shadow-lg shadow-sky-500/25 hover:bg-sky-400 transition transform hover:scale-105 cursor-pointer"
-          >
-            <Play className="h-5 w-5 fill-current" />
-            <span>Click to Play</span>
-          </button>
-          <p className="text-xs text-slate-300 mt-3 font-medium">Browser blocked automatic playback</p>
-        </div>
-      )}
-
-      {/* Player Error Overlay */}
-      {playerError && (
-        <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 mb-3">
-            <AlertTriangle className="h-6 w-6" />
-          </div>
-          <h4 className="text-base font-semibold text-white mb-1">Playback Error</h4>
-          <p className="text-xs text-slate-300 max-w-md leading-relaxed">{playerError}</p>
-        </div>
-      )}
-
-      {/* Hover Floating Controls Overlay (Top) */}
-      {currentVideo && (
-        <div
-          onFocusCapture={() => {
-            setIsFocusedInOverlay(true);
-            setShowOverlay(true);
-          }}
-          onBlurCapture={(e) => {
-            // Check if focus moved outside the overlay
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-              setIsFocusedInOverlay(false);
-              scheduleHideTimer();
-            }
-          }}
-          className={`absolute top-0 inset-x-0 p-4 bg-gradient-to-b from-black/85 via-black/45 to-transparent pointer-events-none transition-opacity duration-300 z-10 flex items-start justify-between gap-4 focus-within:opacity-100 ${
-            showOverlay ? 'opacity-100' : 'opacity-0'
-          }`}
-          data-testid="video-top-overlay"
-        >
-          {/* Title and breadcrumbs */}
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-mono text-sky-400 tracking-wide uppercase truncate">
-              {currentVideo.relativePath}
-            </p>
-            <h3 className="text-sm font-medium text-white truncate drop-shadow">
-              {currentVideo.name}
-            </h3>
-          </div>
-
-          {/* Quick layout & screen actions */}
+          {/* Top Overlay Bar: Top-Left (1 of N + Relative Path) and Top-Right (Theater Mode + Autoplay On/Off) */}
           <div
-            className={`flex items-center gap-2 shrink-0 ${
-              showOverlay ? 'pointer-events-auto' : 'pointer-events-none focus-within:pointer-events-auto'
+            data-testid="video-top-overlay"
+            inert={!controlsVisible ? true : undefined}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className={`absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-3 px-3.5 pt-3 pb-6 bg-gradient-to-b from-black/85 via-black/45 to-transparent transition-opacity duration-200 ${
+              controlsVisible
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none'
             }`}
           >
-            {/* Native Fullscreen Toggle */}
-            <button
-              onClick={handleToggleFullscreen}
-              className="p-2 rounded-xl bg-black/50 hover:bg-black/80 text-slate-100 hover:text-white border border-white/20 backdrop-blur-md transition shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-400"
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-              tabIndex={0}
-            >
-              {isFullscreen ? (
-                <Shrink className="h-4 w-4 text-sky-400" />
-              ) : (
-                <Expand className="h-4 w-4" />
+            {/* Top-Left: Position badge + full relative path */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {totalCount > 0 && currentIndex >= 0 && (
+                <span
+                  data-testid="video-position-badge"
+                  className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-black/65 text-indigo-300 border border-white/15 backdrop-blur-md shrink-0 tabular-nums"
+                >
+                  {currentIndex + 1} of {totalCount}
+                </span>
               )}
-            </button>
+              <span
+                data-testid="video-relative-path"
+                title={currentVideo.relativePath}
+                className="text-xs sm:text-sm font-medium text-slate-100 truncate drop-shadow-sm"
+              >
+                {currentVideo.relativePath}
+              </span>
+            </div>
+
+            {/* Top-Right: Icon-only Theater Mode & Autoplay On/Off */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="theater-mode-button"
+                onClick={onToggleTheaterMode}
+                aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Theater Mode'}
+                aria-pressed={isTheaterMode}
+                title={isTheaterMode ? 'Exit Theater Mode (Esc)' : 'Theater Mode'}
+                className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                  isTheaterMode
+                    ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
+                    : 'bg-black/60 hover:bg-black/80 text-slate-200 hover:text-white border-white/15'
+                }`}
+              >
+                {isTheaterMode ? <Minimize2 className="w-4 h-4" /> : <Tv className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="button"
+                data-testid="autoplay-toggle-button"
+                onClick={onToggleAutoplayNext}
+                aria-label={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
+                aria-pressed={autoplayNext}
+                title={autoplayNext ? 'Autoplay Next: On' : 'Autoplay Next: Off'}
+                className={`p-2 rounded-lg backdrop-blur-md border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                  autoplayNext
+                    ? 'bg-indigo-600/90 hover:bg-indigo-500 text-white border-indigo-400/50'
+                    : 'bg-black/60 hover:bg-black/80 text-slate-400 hover:text-slate-200 border-white/15'
+                }`}
+              >
+                <ListVideo className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Integrated Bottom Video Controls */}
+          <VideoControls
+            visible={controlsVisible}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            volume={volume}
+            muted={muted}
+            hasNext={hasNext}
+            hasPrevious={hasPrevious}
+            isFullscreen={isFullscreen}
+            onTogglePlayPause={onTogglePlayPause}
+            onSeek={onSeek}
+            onPlayPrevious={onPlayPrevious}
+            onPlayNext={onPlayNext}
+            onToggleMute={onToggleMute}
+            onVolumeChange={onVolumeChange}
+            onToggleFullscreen={toggleFullscreen}
+            onInteractionChange={setIsInteractingWithControls}
+          />
+
+          {/* Autoplay Blocked Overlay */}
+          {autoplayBlocked && !isPlaying && !playerError && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 z-10">
+              <button
+                type="button"
+                onClick={onManualPlay}
+                className="group/btn flex flex-col items-center gap-3 p-6 rounded-2xl bg-slate-900/90 hover:bg-indigo-600/90 border border-slate-700/80 hover:border-indigo-400/50 text-white shadow-2xl transition-all duration-200 cursor-pointer transform hover:scale-105"
+              >
+                <div className="w-16 h-16 rounded-full bg-indigo-500 group-hover/btn:bg-white group-hover/btn:text-indigo-600 flex items-center justify-center shadow-lg transition-colors">
+                  <Play className="w-8 h-8 fill-current ml-1" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-base">Click to Start Playback</p>
+                  <p className="text-xs text-slate-300 group-hover/btn:text-indigo-100 mt-0.5">
+                    Browser prevented automatic playback
+                  </p>
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* Error Overlay */}
+          {playerError && (
+            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-10">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-3">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-slate-100 font-semibold text-base mb-1">Playback Issue</h3>
+              <p className="text-slate-400 text-xs sm:text-sm max-w-md leading-relaxed">
+                {playerError}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center text-slate-500 p-8 text-center">
+          <Film className="w-12 h-12 mb-3 stroke-[1.5] text-slate-600" />
+          <p className="text-sm font-medium text-slate-400">Select a video from the playlist</p>
         </div>
       )}
     </div>
   );
-}
+};
