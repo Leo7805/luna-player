@@ -1,15 +1,20 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Search,
   X,
   ListVideo,
-  ChevronsUp,
-  ChevronsDown,
+  ChevronsUpDown,
+  ChevronsDownUp,
   AudioLines,
   PanelRight,
 } from 'lucide-react';
 import { VideoLibrary, VideoItem } from '../types/video';
-import { PlaylistFolder, ExpansionOverride } from './PlaylistFolder';
+import {
+  PlaylistFolder,
+  collectFolderIds,
+  setAllFolderExpansion,
+  toggleFolderExpansion,
+} from './PlaylistFolder';
 import { ExtractAudioDialog } from './ExtractAudioDialog';
 import { Tooltip } from './Tooltip';
 import { blurButtonAfterPointerClick } from '../utils/shortcuts';
@@ -29,15 +34,26 @@ export function Playlist({
 }: PlaylistProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [manualExpandAll, setManualExpandAll] = useState<boolean | null>(null);
-  const [expansionOverride, setExpansionOverride] = useState<ExpansionOverride | null>(null);
+  const expandableFolderIds = useMemo(() => collectFolderIds(library.tree), [library.tree]);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(
+    () => new Set(library.flatPlaylist.length <= 50 ? expandableFolderIds : [])
+  );
+  const [expansionLibraryId, setExpansionLibraryId] = useState(library.id);
+  const [selectedExpansionBlocked, setSelectedExpansionBlocked] = useState(false);
+  const [searchExpansionBlockedQuery, setSearchExpansionBlockedQuery] = useState<string | null>(
+    null
+  );
   const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalVideos = library.flatPlaylist.length;
   const isFilesMode = library.sourceType === 'files';
-  const isAllExpanded = manualExpandAll !== null ? manualExpandAll : totalVideos <= 50;
   const isFiltered = searchQuery.trim().length > 0;
+  const hasExpandableFolders = library.tree.subfolders.length > 0;
+  const isAllExpanded =
+    expansionLibraryId === library.id &&
+    expandableFolderIds.length > 0 &&
+    expandableFolderIds.every((folderId) => expandedFolderIds.has(folderId));
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -45,20 +61,40 @@ export function Playlist({
     }
   }, [isSearchOpen]);
 
-  // Reset manual expand override when switching to a different library
+  // Reset folder expansion when switching to a different library.
   useEffect(() => {
-    setManualExpandAll(null);
-    setExpansionOverride(null);
-  }, [library.id]);
+    const shouldExpandInitially = library.flatPlaylist.length <= 50;
+    setExpandedFolderIds(setAllFolderExpansion(expandableFolderIds, shouldExpandInitially));
+    setExpansionLibraryId(library.id);
+    setSelectedExpansionBlocked(false);
+    setSearchExpansionBlockedQuery(null);
+  }, [expandableFolderIds, library.flatPlaylist.length, library.id]);
 
   const handleToggleExpandAll = () => {
     const nextExpanded = !isAllExpanded;
-    setManualExpandAll(nextExpanded);
-    setExpansionOverride((prev) => ({
-      version: (prev?.version ?? 0) + 1,
-      expanded: nextExpanded,
-    }));
+    setExpandedFolderIds(setAllFolderExpansion(expandableFolderIds, nextExpanded));
+    setSelectedExpansionBlocked(true);
+    setSearchExpansionBlockedQuery(searchQuery.trim());
   };
+
+  const handleToggleFolder = useCallback((folderId: string) => {
+    setExpandedFolderIds((previous) => toggleFolderExpansion(previous, folderId));
+    setSelectedExpansionBlocked(false);
+    setSearchExpansionBlockedQuery(null);
+  }, []);
+
+  const handleAutoExpandFolder = useCallback(
+    (folderId: string) => {
+      if (selectedExpansionBlocked) return;
+      setExpandedFolderIds((previous) => {
+        if (previous.has(folderId)) return previous;
+        const next = new Set(previous);
+        next.add(folderId);
+        return next;
+      });
+    },
+    [selectedExpansionBlocked]
+  );
 
   const matchingCount = useMemo(() => {
     if (!searchQuery.trim()) return totalVideos;
@@ -129,6 +165,7 @@ export function Playlist({
               </Tooltip>
             )}
 
+            {hasExpandableFolders && (
             <Tooltip content={isAllExpanded ? 'Collapse All' : 'Expand All'} placement="bottom">
               <button
                 type="button"
@@ -141,12 +178,13 @@ export function Playlist({
                 data-testid="toggle-expand-all-button"
               >
                 {isAllExpanded ? (
-                  <ChevronsUp className="h-4 w-4" />
+                  <ChevronsDownUp className="h-4 w-4" />
                 ) : (
-                  <ChevronsDown className="h-4 w-4" />
+                  <ChevronsUpDown className="h-4 w-4" />
                 )}
               </button>
             </Tooltip>
+            )}
 
             {onCollapseSidebar && (
               <Tooltip content="Hide Playlist" placement="left">
@@ -223,8 +261,11 @@ export function Playlist({
             currentVideoId={currentVideo?.id || null}
             onSelectVideo={onSelectVideo}
             searchQuery={searchQuery}
-            defaultExpanded={isAllExpanded}
-            expansionOverride={expansionOverride}
+            expandedFolderIds={expansionLibraryId === library.id ? expandedFolderIds : new Set()}
+            onToggleFolder={handleToggleFolder}
+            onAutoExpandFolder={handleAutoExpandFolder}
+            selectedExpansionBlocked={selectedExpansionBlocked}
+            searchExpansionBlocked={searchQuery.trim() === searchExpansionBlockedQuery}
           />
         )}
       </div>

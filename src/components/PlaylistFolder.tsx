@@ -1,13 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { FolderNode, VideoItem } from '../types/video';
 import { PlaylistItem } from './PlaylistItem';
 import { blurButtonAfterPointerClick } from '../utils/shortcuts';
-
-export interface ExpansionOverride {
-  version: number;
-  expanded: boolean;
-}
 
 interface PlaylistFolderProps {
   folder: FolderNode;
@@ -16,13 +11,49 @@ interface PlaylistFolderProps {
   currentVideoId: string | null;
   onSelectVideo: (video: VideoItem) => void;
   searchQuery: string;
-  defaultExpanded: boolean;
-  expansionOverride: ExpansionOverride | null;
+  expandedFolderIds: ReadonlySet<string>;
+  onToggleFolder: (folderId: string) => void;
+  onAutoExpandFolder: (folderId: string) => void;
+  selectedExpansionBlocked: boolean;
+  searchExpansionBlocked: boolean;
 }
 
 function folderContainsVideo(folder: FolderNode, videoId: string): boolean {
   if (folder.videos.some((v) => v.id === videoId)) return true;
   return folder.subfolders.some((sub) => folderContainsVideo(sub, videoId));
+}
+
+export function folderContainsSearchMatch(folder: FolderNode, searchQuery: string): boolean {
+  const query = searchQuery.trim().toLowerCase();
+  if (!query) return false;
+  return (
+    folder.videos.some(
+      (video) =>
+        video.name.toLowerCase().includes(query) ||
+        video.relativePath.toLowerCase().includes(query)
+    ) || folder.subfolders.some((subfolder) => folderContainsSearchMatch(subfolder, query))
+  );
+}
+
+export function collectFolderIds(folder: FolderNode): string[] {
+  return [
+    ...(folder.relativePath ? [folder.id] : []),
+    ...folder.subfolders.flatMap((subfolder) => collectFolderIds(subfolder)),
+  ];
+}
+
+export function setAllFolderExpansion(folderIds: readonly string[], expanded: boolean): Set<string> {
+  return expanded ? new Set(folderIds) : new Set();
+}
+
+export function toggleFolderExpansion(
+  expandedFolderIds: ReadonlySet<string>,
+  folderId: string
+): Set<string> {
+  const next = new Set(expandedFolderIds);
+  if (next.has(folderId)) next.delete(folderId);
+  else next.add(folderId);
+  return next;
 }
 
 export function PlaylistFolder({
@@ -32,32 +63,14 @@ export function PlaylistFolder({
   currentVideoId,
   onSelectVideo,
   searchQuery,
-  defaultExpanded,
-  expansionOverride,
+  expandedFolderIds,
+  onToggleFolder,
+  onAutoExpandFolder,
+  selectedExpansionBlocked,
+  searchExpansionBlocked,
 }: PlaylistFolderProps) {
-  const [isExpanded, setIsExpanded] = useState(
-    expansionOverride ? expansionOverride.expanded : defaultExpanded
-  );
   const prevVideoIdRef = useRef<string | null>(null);
-  const prevOverrideVersionRef = useRef<number>(expansionOverride?.version ?? 0);
 
-  // Explicit user action: Expand All / Collapse All takes precedence over current state
-  useEffect(() => {
-    if (!expansionOverride) return;
-    if (expansionOverride.version !== prevOverrideVersionRef.current) {
-      prevOverrideVersionRef.current = expansionOverride.version;
-      setIsExpanded(expansionOverride.expanded);
-    }
-  }, [expansionOverride]);
-
-  // If search query is present, auto-expand to display matching search results
-  useEffect(() => {
-    if (searchQuery.trim().length > 0) {
-      setIsExpanded(true);
-    }
-  }, [searchQuery]);
-
-  // Auto-expand only when navigating to a newly selected video (never after Collapse All)
   useEffect(() => {
     if (!currentVideoId || currentVideoId === prevVideoIdRef.current) {
       prevVideoIdRef.current = currentVideoId;
@@ -65,10 +78,10 @@ export function PlaylistFolder({
     }
     prevVideoIdRef.current = currentVideoId;
 
-    if (folderContainsVideo(folder, currentVideoId)) {
-      setIsExpanded(true);
+    if (!selectedExpansionBlocked && folderContainsVideo(folder, currentVideoId)) {
+      onAutoExpandFolder(folder.id);
     }
-  }, [currentVideoId, folder]);
+  }, [currentVideoId, folder, onAutoExpandFolder, selectedExpansionBlocked]);
 
   const hasSubfolders = folder.subfolders.length > 0;
   const hasVideos = folder.videos.length > 0;
@@ -82,6 +95,12 @@ export function PlaylistFolder({
     : folder.videos;
 
   const isSearching = searchQuery.trim().length > 0;
+  const isExpanded =
+    expandedFolderIds.has(folder.id) ||
+    ((!searchExpansionBlocked && isSearching && folderContainsSearchMatch(folder, searchQuery)) ||
+      (!selectedExpansionBlocked &&
+        !!currentVideoId &&
+        folderContainsVideo(folder, currentVideoId)));
 
   if (isSearching && filteredVideos.length === 0 && folder.subfolders.length === 0) {
     return null;
@@ -95,7 +114,7 @@ export function PlaylistFolder({
           type="button"
           onClick={(e) => {
             blurButtonAfterPointerClick(e);
-            setIsExpanded((prev) => !prev);
+            onToggleFolder(folder.id);
           }}
           className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/5 transition cursor-pointer"
           style={{ paddingLeft: `${Math.max(10, depth * 16)}px` }}
@@ -151,8 +170,11 @@ export function PlaylistFolder({
               currentVideoId={currentVideoId}
               onSelectVideo={onSelectVideo}
               searchQuery={searchQuery}
-              defaultExpanded={defaultExpanded}
-              expansionOverride={expansionOverride}
+              expandedFolderIds={expandedFolderIds}
+              onToggleFolder={onToggleFolder}
+              onAutoExpandFolder={onAutoExpandFolder}
+              selectedExpansionBlocked={selectedExpansionBlocked}
+              searchExpansionBlocked={searchExpansionBlocked}
             />
           ))}
 
