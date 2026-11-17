@@ -12,6 +12,12 @@ import {
   PLAYBACK_RATE_EPSILON,
   type ControlSettings,
 } from '../config/controlSettings';
+import { detectMediaFormat } from '../utils/mediaDetector';
+import {
+  createMpegTsPlayer,
+  isMpegTsSupported,
+  type MpegTsPlayerInstance,
+} from '../services/mpegtsPlayerAdapter';
 
 interface UsePlaybackProps {
   library: VideoLibrary | null;
@@ -24,6 +30,7 @@ export function usePlayback({
 }: UsePlaybackProps) {
   const [currentVideo, setCurrentVideo] = useState<VideoItem | null>(null);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [isMpegTs, setIsMpegTs] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -43,6 +50,7 @@ export function usePlayback({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeObjectUrlRef = useRef<string | null>(null);
+  const mpegtsAdapterRef = useRef<MpegTsPlayerInstance | null>(null);
   const volumeRef = useRef<number>(volume);
   volumeRef.current = volume;
   const mutedRef = useRef<boolean>(muted);
@@ -107,9 +115,13 @@ export function usePlayback({
     }
   }, []);
 
-  // Cleanup object URLs on unmount
+  // Cleanup object URLs and mpegts instance on unmount
   useEffect(() => {
     return () => {
+      if (mpegtsAdapterRef.current) {
+        mpegtsAdapterRef.current.destroy();
+        mpegtsAdapterRef.current = null;
+      }
       if (activeObjectUrlRef.current) {
         URL.revokeObjectURL(activeObjectUrlRef.current);
         activeObjectUrlRef.current = null;
@@ -121,10 +133,15 @@ export function usePlayback({
   useEffect(() => {
     activeSelectionTokenRef.current++;
     pendingAutoPlayTokenRef.current = 0;
+    if (mpegtsAdapterRef.current) {
+      mpegtsAdapterRef.current.destroy();
+      mpegtsAdapterRef.current = null;
+    }
     if (activeObjectUrlRef.current) {
       URL.revokeObjectURL(activeObjectUrlRef.current);
       activeObjectUrlRef.current = null;
     }
+    setIsMpegTs(false);
     setCurrentVideo(null);
     setVideoSrc(null);
     setIsPlaying(false);
@@ -152,7 +169,7 @@ export function usePlayback({
     // If clicking the currently selected video that is already loaded, start/resume playback
     if (
       currentVideoRef.current?.id === video.id &&
-      activeObjectUrlRef.current &&
+      (activeObjectUrlRef.current || mpegtsAdapterRef.current) &&
       videoRef.current
     ) {
       if (autoPlay && videoRef.current.paused) {
@@ -168,6 +185,17 @@ export function usePlayback({
     setCurrentTime(0);
     setDuration(0);
     setCurrentVideo(video);
+
+    // Teardown previous player instances
+    if (mpegtsAdapterRef.current) {
+      mpegtsAdapterRef.current.destroy();
+      mpegtsAdapterRef.current = null;
+    }
+    if (activeObjectUrlRef.current) {
+      URL.revokeObjectURL(activeObjectUrlRef.current);
+      activeObjectUrlRef.current = null;
+    }
+    setIsMpegTs(false);
 
     try {
       let file: File | undefined = video.file;
@@ -185,14 +213,52 @@ export function usePlayback({
         throw new Error('Video file handle is unavailable or access was revoked.');
       }
 
-      // Safe URL release and swap
-      const newUrl = URL.createObjectURL(file);
-      if (activeObjectUrlRef.current) {
-        URL.revokeObjectURL(activeObjectUrlRef.current);
+      // Check format using bounded byte inspection
+      const detection = await detectMediaFormat(file);
+      if (token !== activeSelectionTokenRef.current) {
+        return;
       }
-      activeObjectUrlRef.current = newUrl;
 
-      setVideoSrc(newUrl);
+      if (detection.isMpegTs && isMpegTsSupported() && videoRef.current) {
+        setIsMpegTs(true);
+        setVideoSrc(null);
+
+        const adapter = await createMpegTsPlayer({
+          file,
+          syncOffset: detection.syncOffset ?? 0,
+          videoElement: videoRef.current,
+          onDurationChange: (dur) => {
+            if (token !== activeSelectionTokenRef.current) return;
+            if (Number.isFinite(dur) && dur > 0) {
+              setDuration(dur);
+            }
+          },
+          onError: (msg) => {
+            if (token !== activeSelectionTokenRef.current) return;
+            setPlayerError(msg);
+            setIsPlaying(false);
+          },
+        });
+
+        if (token !== activeSelectionTokenRef.current) {
+          adapter.destroy();
+          return;
+        }
+
+        mpegtsAdapterRef.current = adapter;
+        if (adapter.duration > 0) {
+          setDuration(adapter.duration);
+        }
+
+        if (autoPlay) {
+          attemptPlay(videoRef.current, token);
+        }
+      } else {
+        setIsMpegTs(false);
+        const newUrl = URL.createObjectURL(file);
+        activeObjectUrlRef.current = newUrl;
+        setVideoSrc(newUrl);
+      }
     } catch (err: unknown) {
       if (token !== activeSelectionTokenRef.current) return;
       const message =
@@ -254,7 +320,13 @@ export function usePlayback({
     } catch {
       // Ignore unsupported playbackRate and keep actual element rate
     }
-    const nextDuration = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+    const nextDuration =
+      Number.isFinite(videoEl.duration) && videoEl.duration > 0
+        ? videoEl.duration
+        : knownDuration > 0
+        ? knownDuration
+        : 0;
     setDuration(nextDuration);
 
     try {
@@ -265,11 +337,16 @@ export function usePlayback({
         video.lastModified
       );
 
-      if (saved && !saved.completed) {
-        const minResume = Math.min(5, videoEl.duration * 0.1);
-        const maxResume = videoEl.duration > 15 ? videoEl.duration - 15 : videoEl.duration * 0.95;
+      const effectiveDuration = nextDuration > 0 ? nextDuration : (videoEl.duration || 0);
+      if (saved && !saved.completed && effectiveDuration > 0) {
+        const minResume = Math.min(5, effectiveDuration * 0.1);
+        const maxResume = effectiveDuration > 15 ? effectiveDuration - 15 : effectiveDuration * 0.95;
         if (saved.currentTime > minResume && saved.currentTime < maxResume) {
-          videoEl.currentTime = saved.currentTime;
+          if (mpegtsAdapterRef.current) {
+            mpegtsAdapterRef.current.seek(saved.currentTime);
+          } else {
+            videoEl.currentTime = saved.currentTime;
+          }
         }
       }
     } catch {
@@ -298,11 +375,17 @@ export function usePlayback({
 
     const currentTimeVal = videoEl.currentTime;
     const durationVal = videoEl.duration;
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
 
     setCurrentTime(Number.isFinite(currentTimeVal) ? currentTimeVal : 0);
     if (Number.isFinite(durationVal) && durationVal > 0) {
       setDuration(durationVal);
+    } else if (knownDuration > 0) {
+      setDuration(knownDuration);
     }
+
+    const effectiveDuration =
+      Number.isFinite(durationVal) && durationVal > 0 ? durationVal : knownDuration;
 
     // Save roughly every 4 seconds or when near end
     const now = Date.now();
@@ -314,7 +397,7 @@ export function usePlayback({
         video.size,
         video.lastModified,
         currentTimeVal,
-        durationVal
+        effectiveDuration
       );
     }
   }, []);
@@ -336,13 +419,17 @@ export function usePlayback({
 
     setCurrentTime(Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0);
 
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+    const effectiveDuration =
+      Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+
     saveVideoProgress(
       currentLib.id,
       video.relativePath,
       video.size,
       video.lastModified,
       videoEl.currentTime,
-      videoEl.duration
+      effectiveDuration
     );
   }, []);
 
@@ -358,13 +445,17 @@ export function usePlayback({
     // Synchronize isPlaying with native media element state
     setIsPlaying(!videoEl.paused);
 
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+    const effectiveDuration =
+      Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+
     saveVideoProgress(
       currentLib.id,
       video.relativePath,
       video.size,
       video.lastModified,
       videoEl.currentTime,
-      videoEl.duration
+      effectiveDuration
     );
   }, []);
 
@@ -404,8 +495,12 @@ export function usePlayback({
     setIsPlaying(false);
 
     if (video && currentLib && videoEl) {
-      if (Number.isFinite(videoEl.duration) && videoEl.duration > 0) {
-        setCurrentTime(videoEl.duration);
+      const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+      const effectiveDuration =
+        Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+
+      if (effectiveDuration > 0) {
+        setCurrentTime(effectiveDuration);
       }
       // Mark as completed in storage
       saveVideoProgress(
@@ -413,8 +508,8 @@ export function usePlayback({
         video.relativePath,
         video.size,
         video.lastModified,
-        videoEl.duration,
-        videoEl.duration
+        effectiveDuration,
+        effectiveDuration
       );
     }
 
@@ -450,10 +545,20 @@ export function usePlayback({
   const seekTo = useCallback((time: number) => {
     const videoEl = videoRef.current;
     if (!videoEl || !Number.isFinite(time)) return;
-    const maxTime = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+    const maxTime =
+      Number.isFinite(videoEl.duration) && videoEl.duration > 0
+        ? videoEl.duration
+        : knownDuration > 0
+        ? knownDuration
+        : 0;
     const clamped = Math.max(0, Math.min(time, maxTime));
     try {
-      videoEl.currentTime = clamped;
+      if (mpegtsAdapterRef.current) {
+        mpegtsAdapterRef.current.seek(clamped);
+      } else {
+        videoEl.currentTime = clamped;
+      }
     } catch {
       // Ignore invalid seek state before metadata is ready
     }
@@ -480,7 +585,13 @@ export function usePlayback({
   const seekToEnd = useCallback((): boolean => {
     const videoEl = videoRef.current;
     if (!videoEl) return false;
-    const maxTime = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+    const maxTime =
+      Number.isFinite(videoEl.duration) && videoEl.duration > 0
+        ? videoEl.duration
+        : knownDuration > 0
+        ? knownDuration
+        : 0;
     seekTo(Math.max(0, maxTime - END_SEEK_OFFSET_SECONDS));
     return true;
   }, [seekTo]);
@@ -650,6 +761,7 @@ export function usePlayback({
     videoRef,
     currentVideo,
     videoSrc,
+    isMpegTs,
     isPlaying,
     autoplayBlocked,
     playerError,

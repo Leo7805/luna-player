@@ -34,6 +34,7 @@ interface VideoPlayerProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   currentVideo: VideoItem | null;
   videoSrc: string | null;
+  isMpegTs?: boolean;
   isPlaying: boolean;
   autoplayBlocked: boolean;
   playerError: string | null;
@@ -79,6 +80,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoRef,
   currentVideo,
   videoSrc,
+  isMpegTs = false,
   isPlaying,
   autoplayBlocked,
   playerError,
@@ -440,6 +442,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const isVideoEnded = Boolean(videoRef.current?.ended);
+  const hasPlayableSource = Boolean(videoSrc || isMpegTs);
 
   // Controls stay visible while active, interacting, keyboard-focused, ended, autoplay-blocked, in error/empty state, or context menu open
   const controlsVisible =
@@ -449,7 +452,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     isVideoEnded ||
     autoplayBlocked ||
     Boolean(playerError) ||
-    !videoSrc ||
+    !hasPlayableSource ||
     contextMenuState.isOpen;
 
   return (
@@ -493,7 +496,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <>
           <video
             ref={videoRef}
-            src={videoSrc || undefined}
+            src={isMpegTs ? undefined : (videoSrc || undefined)}
             className={`w-full h-full object-contain bg-black ${
               controlsVisible ? 'cursor-pointer' : 'cursor-none'
             }`}
@@ -510,7 +513,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               if (isTouchReveal) {
                 return;
               }
-              if (videoSrc && !playerError) {
+              if (hasPlayableSource && !playerError) {
                 onTogglePlayPause();
               }
             }}
@@ -728,7 +731,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         isMuted={muted}
         isFullscreen={isFullscreen}
         isTheaterMode={!isFullscreen && isTheaterMode}
-        isPlayable={Boolean(currentVideo && videoSrc && !playerError)}
+        isPlayable={Boolean(currentVideo && hasPlayableSource && !playerError)}
         onClose={closeContextMenu}
         onSeekBackwardFine={() => handleRelativeSeek(-controlSettings.seek.fineSeconds)}
         onSeekForwardFine={() => handleRelativeSeek(controlSettings.seek.fineSeconds)}
