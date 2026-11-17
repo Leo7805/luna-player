@@ -10,9 +10,11 @@ interface OpenVideosControlProps {
   library?: VideoLibrary | null;
   defaultOpenMode: OpenVideoMode;
   isFsaSupported: boolean;
+  isFsaOpenFileSupported?: boolean;
   isScanning: boolean;
   scanCount?: number;
   onOpenFolder: () => void;
+  onOpenFiles?: () => void;
   onFallbackFolderSelect: (files: FileList | null) => void;
   onOpenFilesSelect: (files: FileList | null) => void;
 }
@@ -22,9 +24,11 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
   library,
   defaultOpenMode,
   isFsaSupported,
+  isFsaOpenFileSupported = false,
   isScanning,
   scanCount = 0,
   onOpenFolder,
+  onOpenFiles,
   onFallbackFolderSelect,
   onOpenFilesSelect,
 }) => {
@@ -123,7 +127,11 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
 
   const triggerOpenFiles = () => {
     setMenuOpen(false);
-    filesInputRef.current?.click();
+    if (isFsaOpenFileSupported && onOpenFiles) {
+      onOpenFiles();
+    } else {
+      filesInputRef.current?.click();
+    }
   };
 
   const triggerDefaultOpen = () => {

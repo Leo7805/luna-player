@@ -38,11 +38,13 @@ export function App() {
     error,
     storedHandlePrompt,
     openFolder,
+    openFiles,
     reauthorizeStoredHandle,
     dismissStoredHandle,
     handleFallbackFiles,
     handleSelectedFiles,
     isFsaSupported,
+    isFsaOpenFileSupported,
     defaultOpenMode,
   } = useVideoLibrary();
 
@@ -50,6 +52,7 @@ export function App() {
     videoRef,
     currentVideo,
     videoSrc,
+    isMpegTs,
     isPlaying,
     autoplayBlocked,
     playerError,
@@ -236,10 +239,12 @@ export function App() {
           <Header
             library={library}
             onOpenFolder={openFolder}
+            onOpenFiles={openFiles}
             onFallbackSelect={handleFallbackFiles}
             onOpenFilesSelect={handleSelectedFiles}
             defaultOpenMode={defaultOpenMode}
             isFsaSupported={isFsaSupported}
+            isFsaOpenFileSupported={isFsaOpenFileSupported}
             isScanning={isScanning}
             theme={theme}
             onToggleTheme={toggleTheme}
@@ -293,6 +298,7 @@ export function App() {
                   videoRef={videoRef}
                   currentVideo={currentVideo}
                   videoSrc={videoSrc}
+                  isMpegTs={isMpegTs}
                   isPlaying={isPlaying}
                   autoplayBlocked={autoplayBlocked}
                   playerError={playerError}
@@ -382,10 +388,12 @@ export function App() {
           ) : (
             <EmptyState
               onOpenFolder={openFolder}
+              onOpenFiles={openFiles}
               onFallbackSelect={handleFallbackFiles}
               onOpenFilesSelect={handleSelectedFiles}
               defaultOpenMode={defaultOpenMode}
               isFsaSupported={isFsaSupported}
+              isFsaOpenFileSupported={isFsaOpenFileSupported}
               isScanning={isScanning}
               scanCount={scanCount}
               error={error}

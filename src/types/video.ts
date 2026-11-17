@@ -30,6 +30,7 @@ export interface VideoLibrary {
   flatPlaylist: VideoItem[]; // Deterministic DFS ordered playback list
   sourceType: 'fs-access' | 'input-fallback' | 'files';
   handle?: FileSystemDirectoryHandle;
+  fileHandles?: FileSystemFileHandle[];
 }
 
 export interface PlaybackProgress {

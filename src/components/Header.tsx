@@ -9,10 +9,12 @@ import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 interface HeaderProps {
   library: VideoLibrary | null;
   onOpenFolder: () => void;
+  onOpenFiles?: () => void;
   onFallbackSelect: (files: FileList | null) => void;
   onOpenFilesSelect: (files: FileList | null) => void;
   defaultOpenMode: OpenVideoMode;
   isFsaSupported: boolean;
+  isFsaOpenFileSupported?: boolean;
   isScanning: boolean;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -23,10 +25,12 @@ interface HeaderProps {
 export function Header({
   library,
   onOpenFolder,
+  onOpenFiles,
   onFallbackSelect,
   onOpenFilesSelect,
   defaultOpenMode,
   isFsaSupported,
+  isFsaOpenFileSupported = false,
   isScanning,
   theme,
   onToggleTheme,
@@ -63,8 +67,10 @@ export function Header({
             library={library}
             defaultOpenMode={defaultOpenMode}
             isFsaSupported={isFsaSupported}
+            isFsaOpenFileSupported={isFsaOpenFileSupported}
             isScanning={isScanning}
             onOpenFolder={onOpenFolder}
+            onOpenFiles={onOpenFiles}
             onFallbackFolderSelect={onFallbackSelect}
             onOpenFilesSelect={onOpenFilesSelect}
           />

@@ -6,17 +6,31 @@ import {
   verifyHandlePermission,
   scanDirectoryHandle,
 } from '../services/directoryAccess';
+import {
+  isFsaOpenFileSupported,
+  promptOpenFiles,
+  verifyFileHandlesPermission,
+  scanFileHandles,
+} from '../services/fileAccess';
 import { parseFileList, parseSelectedFiles } from '../services/fallbackAccess';
 import { getDefaultOpenMode } from '../utils/platform';
 import {
   getStoredDirectoryHandle,
   storeDirectoryHandle,
   clearStoredDirectoryHandle,
+  getStoredFileHandles,
+  storeFileHandles,
+  clearStoredFileHandles,
+  getStoredLibrarySource,
+  setStoredLibrarySource,
 } from '../services/idbStorage';
 
 export interface StoredHandlePrompt {
-  handle: FileSystemDirectoryHandle;
-  folderName: string;
+  sourceType: 'folder' | 'files';
+  handle?: FileSystemDirectoryHandle;
+  fileHandles?: FileSystemFileHandle[];
+  name: string;
+  folderName?: string;
 }
 
 export function useVideoLibrary() {
@@ -26,51 +40,13 @@ export function useVideoLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [storedHandlePrompt, setStoredHandlePrompt] = useState<StoredHandlePrompt | null>(null);
 
-  // Monotonic token to prevent asynchronous folder switching race conditions
+  // Monotonic token to prevent asynchronous folder/file switching race conditions
   const scanVersionRef = useRef(0);
   const libraryRef = useRef<VideoLibrary | null>(null);
   libraryRef.current = library;
   const isPickingRef = useRef(false);
 
-  // Attempt to restore previously opened folder on startup
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function checkStoredHandle() {
-      if (!isFileSystemAccessSupported()) return;
-
-      try {
-        const handle = await getStoredDirectoryHandle();
-        if (!handle || isCancelled) return;
-
-        // Check permission without prompting
-        const hasPermission = await verifyHandlePermission(handle, false);
-        if (isCancelled) return;
-
-        if (hasPermission) {
-          // Already authorized (e.g. within active session or persistent grant)
-          loadDirectory(handle);
-        } else {
-          // Prompt user gracefully via banner (requires user gesture)
-          setStoredHandlePrompt({
-            handle,
-            folderName: handle.name || 'Previous Folder',
-          });
-        }
-      } catch {
-        // IDB or handle failure; ignore silently and clear stale entry
-        clearStoredDirectoryHandle().catch(() => {});
-      }
-    }
-
-    checkStoredHandle();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
-
-  const loadDirectory = useCallback(async (handle: FileSystemDirectoryHandle) => {
+  const loadDirectory = useCallback(async (handle: FileSystemDirectoryHandle, isAutoRestore = false) => {
     const currentVersion = ++scanVersionRef.current;
     setIsScanning(true);
     setScanCount(0);
@@ -90,13 +66,20 @@ export function useVideoLibrary() {
 
       setLibrary(scannedLib);
       await storeDirectoryHandle(handle);
+      await setStoredLibrarySource('folder');
     } catch (err: unknown) {
       if (scanVersionRef.current === currentVersion) {
-        setError(
-          err instanceof Error
-            ? `Unable to read folder: ${err.message}`
-            : 'Unable to read the selected folder.'
-        );
+        if (isAutoRestore) {
+          // Auto-restoration on startup failed (e.g. folder deleted, moved, or unavailable).
+          // Gracefully clean up stale handle without surfacing a misleading error message.
+          clearStoredDirectoryHandle().catch(() => {});
+        } else {
+          setError(
+            err instanceof Error
+              ? `Unable to read folder: ${err.message}`
+              : 'Unable to read the selected folder.'
+          );
+        }
       }
     } finally {
       if (scanVersionRef.current === currentVersion) {
@@ -104,6 +87,125 @@ export function useVideoLibrary() {
       }
     }
   }, []);
+
+  const loadFilesFromHandles = useCallback(
+    async (handles: FileSystemFileHandle[], isAutoRestore = false) => {
+      const currentVersion = ++scanVersionRef.current;
+      setIsScanning(true);
+      setScanCount(0);
+      setError(null);
+      setStoredHandlePrompt(null);
+
+      try {
+        const scannedLib = await scanFileHandles(handles, (count) => {
+          if (scanVersionRef.current === currentVersion) {
+            setScanCount(count);
+          }
+        });
+
+        if (scanVersionRef.current !== currentVersion) {
+          return;
+        }
+
+        if (scannedLib && scannedLib.flatPlaylist.length > 0) {
+          setLibrary(scannedLib);
+          if (scannedLib.fileHandles && scannedLib.fileHandles.length > 0) {
+            await storeFileHandles(scannedLib.fileHandles);
+          }
+          await setStoredLibrarySource('files');
+        } else {
+          if (isAutoRestore) {
+            clearStoredFileHandles().catch(() => {});
+          } else {
+            setError('No supported video files could be loaded from the selection.');
+          }
+        }
+      } catch (err: unknown) {
+        if (scanVersionRef.current === currentVersion) {
+          if (isAutoRestore) {
+            clearStoredFileHandles().catch(() => {});
+          } else {
+            setError(
+              err instanceof Error ? err.message : 'Error loading selected files.'
+            );
+          }
+        }
+      } finally {
+        if (scanVersionRef.current === currentVersion) {
+          setIsScanning(false);
+        }
+      }
+    },
+    []
+  );
+
+  // Restore last active library source on startup
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function restoreLastLibrary() {
+      try {
+        const lastSource = await getStoredLibrarySource();
+        if (isCancelled) return;
+
+        if (lastSource === 'files') {
+          // User last used Open Files: NEVER restore an old directory handle.
+          if (!isFsaOpenFileSupported()) return;
+
+          const handles = await getStoredFileHandles();
+          if (!handles || handles.length === 0 || isCancelled) return;
+
+          const hasPermission = await verifyFileHandlesPermission(handles, false);
+          if (isCancelled) return;
+
+          if (hasPermission) {
+            await loadFilesFromHandles(handles, true);
+          } else {
+            const displayName =
+              handles.length === 1
+                ? handles[0].name
+                : `${handles.length} selected videos`;
+            setStoredHandlePrompt({
+              sourceType: 'files',
+              fileHandles: handles,
+              name: displayName,
+              folderName: displayName,
+            });
+          }
+          return;
+        }
+
+        // Either lastSource is 'folder' or legacy session with a stored directory handle
+        if (!isFileSystemAccessSupported()) return;
+
+        const handle = await getStoredDirectoryHandle();
+        if (!handle || isCancelled) return;
+
+        // Check permission without prompting
+        const hasPermission = await verifyHandlePermission(handle, false);
+        if (isCancelled) return;
+
+        if (hasPermission) {
+          await loadDirectory(handle, true);
+        } else {
+          setStoredHandlePrompt({
+            sourceType: 'folder',
+            handle,
+            name: handle.name || 'Previous Folder',
+            folderName: handle.name || 'Previous Folder',
+          });
+        }
+      } catch {
+        // IDB or handle failure; ignore silently
+      }
+    }
+
+    restoreLastLibrary();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [loadDirectory, loadFilesFromHandles]);
 
   const openFolder = useCallback(async () => {
     if (isPickingRef.current) return;
@@ -128,7 +230,7 @@ export function useVideoLibrary() {
         }
       }
 
-      await loadDirectory(handle);
+      await loadDirectory(handle, false);
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : 'Failed to select folder.'
@@ -138,29 +240,66 @@ export function useVideoLibrary() {
     }
   }, [loadDirectory]);
 
-  const reauthorizeStoredHandle = useCallback(async () => {
-    if (!storedHandlePrompt) return;
-    const { handle } = storedHandlePrompt;
+  const openFiles = useCallback(async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
 
     try {
-      const granted = await verifyHandlePermission(handle, true);
-      if (granted) {
-        await loadDirectory(handle);
-      } else {
-        // User denied permission; clear handle
-        setStoredHandlePrompt(null);
-        await clearStoredDirectoryHandle();
+      const handles = await promptOpenFiles();
+      if (!handles || handles.length === 0) {
+        // User cancelled picker dialog
+        return;
+      }
+      await loadFilesFromHandles(handles, false);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to select files.'
+      );
+    } finally {
+      isPickingRef.current = false;
+    }
+  }, [loadFilesFromHandles]);
+
+  const reauthorizeStoredHandle = useCallback(async () => {
+    if (!storedHandlePrompt) return;
+    const { sourceType, handle, fileHandles } = storedHandlePrompt;
+
+    try {
+      if (sourceType === 'files' && fileHandles) {
+        const granted = await verifyFileHandlesPermission(fileHandles, true);
+        if (granted) {
+          await loadFilesFromHandles(fileHandles, false);
+        } else {
+          setStoredHandlePrompt(null);
+          await clearStoredFileHandles();
+        }
+      } else if (handle) {
+        const granted = await verifyHandlePermission(handle, true);
+        if (granted) {
+          await loadDirectory(handle, false);
+        } else {
+          setStoredHandlePrompt(null);
+          await clearStoredDirectoryHandle();
+        }
       }
     } catch {
       setStoredHandlePrompt(null);
-      await clearStoredDirectoryHandle();
+      if (sourceType === 'files') {
+        await clearStoredFileHandles();
+      } else {
+        await clearStoredDirectoryHandle();
+      }
     }
-  }, [storedHandlePrompt, loadDirectory]);
+  }, [storedHandlePrompt, loadDirectory, loadFilesFromHandles]);
 
   const dismissStoredHandle = useCallback(async () => {
+    if (storedHandlePrompt?.sourceType === 'files') {
+      await clearStoredFileHandles();
+    } else {
+      await clearStoredDirectoryHandle();
+    }
     setStoredHandlePrompt(null);
-    await clearStoredDirectoryHandle();
-  }, []);
+  }, [storedHandlePrompt]);
 
   const handleFallbackFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -174,6 +313,8 @@ export function useVideoLibrary() {
       const parsedLib = parseFileList(files);
       if (parsedLib) {
         setLibrary(parsedLib);
+        setStoredLibrarySource('folder').catch(() => {});
+        clearStoredDirectoryHandle().catch(() => {});
       } else {
         setError('No supported video files were found in this folder.');
       }
@@ -198,6 +339,8 @@ export function useVideoLibrary() {
       const parsedLib = parseSelectedFiles(files);
       if (parsedLib && parsedLib.flatPlaylist.length > 0) {
         setLibrary(parsedLib);
+        setStoredLibrarySource('files').catch(() => {});
+        clearStoredFileHandles().catch(() => {});
       } else {
         setError('No supported video files were selected.');
       }
@@ -217,11 +360,13 @@ export function useVideoLibrary() {
     error,
     storedHandlePrompt,
     openFolder,
+    openFiles,
     reauthorizeStoredHandle,
     dismissStoredHandle,
     handleFallbackFiles,
     handleSelectedFiles,
     isFsaSupported: isFileSystemAccessSupported(),
+    isFsaOpenFileSupported: isFsaOpenFileSupported(),
     defaultOpenMode: getDefaultOpenMode(),
   };
 }

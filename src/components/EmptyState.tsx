@@ -4,10 +4,12 @@ import { OpenVideosControl } from './OpenVideosControl';
 
 interface EmptyStateProps {
   onOpenFolder: () => void;
+  onOpenFiles?: () => void;
   onFallbackSelect: (files: FileList | null) => void;
   onOpenFilesSelect: (files: FileList | null) => void;
   defaultOpenMode: OpenVideoMode;
   isFsaSupported: boolean;
+  isFsaOpenFileSupported?: boolean;
   isScanning: boolean;
   scanCount: number;
   error: string | null;
@@ -15,10 +17,12 @@ interface EmptyStateProps {
 
 export function EmptyState({
   onOpenFolder,
+  onOpenFiles,
   onFallbackSelect,
   onOpenFilesSelect,
   defaultOpenMode,
   isFsaSupported,
+  isFsaOpenFileSupported = false,
   isScanning,
   scanCount,
   error,
@@ -50,9 +54,11 @@ export function EmptyState({
             variant="empty-state"
             defaultOpenMode={defaultOpenMode}
             isFsaSupported={isFsaSupported}
+            isFsaOpenFileSupported={isFsaOpenFileSupported}
             isScanning={isScanning}
             scanCount={scanCount}
             onOpenFolder={onOpenFolder}
+            onOpenFiles={onOpenFiles}
             onFallbackFolderSelect={onFallbackSelect}
             onOpenFilesSelect={onOpenFilesSelect}
           />
