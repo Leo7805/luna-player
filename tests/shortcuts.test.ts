@@ -114,7 +114,7 @@ describe('resolveShortcutAction', () => {
     });
   });
 
-  it('preserves Luna Player K, M, and F aliases', () => {
+  it('preserves Luna Player K, M, F, and T aliases', () => {
     expect(resolveShortcutAction(makeEvent({ key: 'k', code: 'KeyK' }))?.action).toBe(
       'toggle-playback'
     );
@@ -132,6 +132,12 @@ describe('resolveShortcutAction', () => {
     );
     expect(resolveShortcutAction(makeEvent({ key: 'F', code: 'KeyF' }))?.action).toBe(
       'toggle-fullscreen'
+    );
+    expect(resolveShortcutAction(makeEvent({ key: 't', code: 'KeyT' }))?.action).toBe(
+      'toggle-theater-mode'
+    );
+    expect(resolveShortcutAction(makeEvent({ key: 'T', code: 'KeyT' }))?.action).toBe(
+      'toggle-theater-mode'
     );
   });
 
@@ -162,6 +168,8 @@ describe('resolveShortcutAction', () => {
       { key: 'k', code: 'KeyK' },
       { key: 'm', code: 'KeyM' },
       { key: 'f', code: 'KeyF' },
+      { key: 't', code: 'KeyT' },
+      { key: 'T', code: 'KeyT' },
     ];
 
     for (const k of toggleKeys) {

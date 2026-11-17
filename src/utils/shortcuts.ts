@@ -14,7 +14,8 @@ export type ShortcutAction =
   | 'seek-forward-far'
   | 'seek-start'
   | 'seek-end'
-  | 'toggle-fullscreen';
+  | 'toggle-fullscreen'
+  | 'toggle-theater-mode';
 
 export interface ShortcutResolution {
   action: ShortcutAction;
@@ -42,6 +43,8 @@ const KEY_TO_ACTION: Record<string, ShortcutAction> = {
   M: 'toggle-muted',
   f: 'toggle-fullscreen',
   F: 'toggle-fullscreen',
+  t: 'toggle-theater-mode',
+  T: 'toggle-theater-mode',
   ',': 'seek-backward-fine',
   '.': 'seek-forward-fine',
   ArrowLeft: 'seek-backward',
@@ -65,6 +68,7 @@ const NON_REPEATABLE_TOGGLE_ACTIONS = new Set<ShortcutAction>([
   'toggle-muted',
   'toggle-max-playback-rate',
   'toggle-fullscreen',
+  'toggle-theater-mode',
 ]);
 
 /**

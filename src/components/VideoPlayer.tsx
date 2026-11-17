@@ -9,6 +9,7 @@ import { VideoItem } from '../types/video';
 import { VideoControls } from './VideoControls';
 import { Tooltip } from './Tooltip';
 import { FeedbackHud } from './FeedbackHud';
+import { VideoContextMenu } from './VideoContextMenu';
 import {
   DEFAULT_CONTROL_SETTINGS,
   type ControlSettings,
@@ -40,6 +41,7 @@ interface VideoPlayerProps {
   duration: number;
   volume: number;
   muted: boolean;
+  playbackRate?: number;
   currentIndex: number;
   totalCount: number;
   hasNext: boolean;
@@ -84,6 +86,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   duration,
   volume,
   muted,
+  playbackRate,
   currentIndex,
   totalCount,
   hasNext,
@@ -127,6 +130,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [hudFeedback, setHudFeedback] = useState<FeedbackMessage | null>(null);
   const hudIdRef = useRef(0);
   const seekAccumulatorRef = useRef<SeekAccumulatorState | null>(null);
+  const [contextMenuState, setContextMenuState] = useState<{
+    isOpen: boolean;
+    anchorX: number;
+    anchorY: number;
+  }>({
+    isOpen: false,
+    anchorX: 0,
+    anchorY: 0,
+  });
+  const justClosedContextMenuAtRef = useRef(0);
 
   const showHud = useCallback((icon: FeedbackIcon, label: string) => {
     setHudFeedback({ id: ++hudIdRef.current, icon, label });
@@ -134,6 +147,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handleDismissHud = useCallback(() => {
     setHudFeedback(null);
+  }, []);
+
+  const handleRelativeSeek = useCallback(
+    (deltaSeconds: number) => {
+      const didSeek = onSeekBy(deltaSeconds);
+      if (didSeek !== false) {
+        const accumulated = accumulateSeek(seekAccumulatorRef.current, deltaSeconds, Date.now());
+        seekAccumulatorRef.current = accumulated;
+        showHud(
+          accumulated.totalSeconds >= 0 ? 'fast-forward' : 'rewind',
+          formatSeekSeconds(accumulated.totalSeconds)
+        );
+      }
+    },
+    [onSeekBy, showHud]
+  );
+
+  const closeContextMenu = useCallback(() => {
+    justClosedContextMenuAtRef.current = Date.now();
+    setContextMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
   }, []);
 
   const clearHideTimer = useCallback(() => {
@@ -158,15 +191,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [clearHideTimer]);
 
-  // Restart inactivity timer on playback state or video changes, and pause timer while interacting/focused
+  // Restart inactivity timer on playback state or video changes, and pause timer while interacting/focused/context menu open
   useEffect(() => {
-    if (isInteractingWithControls || isFocusInside) {
+    if (isInteractingWithControls || isFocusInside || contextMenuState.isOpen) {
       setUserActive(true);
       clearHideTimer();
     } else {
       revealOverlay();
     }
-  }, [isPlaying, currentVideo?.id, isInteractingWithControls, isFocusInside, revealOverlay, clearHideTimer]);
+  }, [isPlaying, currentVideo?.id, isInteractingWithControls, isFocusInside, contextMenuState.isOpen, revealOverlay, clearHideTimer]);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLVideoElement>) => {
+      // Exclusively triggered for the video display surface
+      e.preventDefault();
+      revealOverlay();
+      setContextMenuState({
+        isOpen: true,
+        anchorX: e.clientX,
+        anchorY: e.clientY,
+      });
+    },
+    [revealOverlay]
+  );
 
   // Track Fullscreen API state changes
   useEffect(() => {
@@ -207,6 +254,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!currentVideo) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (contextMenuState.isOpen) return;
       if (hasBlockingModalOpen()) return;
       if (isInteractiveOrEditableTarget(e.target)) return;
 
@@ -217,18 +265,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (resolved.suppressedRepeat) return;
 
       const { seek } = controlSettings;
-
-      const handleRelativeSeek = (deltaSeconds: number) => {
-        const didSeek = onSeekBy(deltaSeconds);
-        if (didSeek !== false) {
-          const accumulated = accumulateSeek(seekAccumulatorRef.current, deltaSeconds, Date.now());
-          seekAccumulatorRef.current = accumulated;
-          showHud(
-            accumulated.totalSeconds >= 0 ? 'fast-forward' : 'rewind',
-            formatSeekSeconds(accumulated.totalSeconds)
-          );
-        }
-      };
 
       switch (resolved.action) {
         case 'toggle-playback': {
@@ -316,6 +352,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           seekAccumulatorRef.current = null;
           toggleFullscreen();
           break;
+        case 'toggle-theater-mode':
+          seekAccumulatorRef.current = null;
+          onToggleTheaterMode();
+          break;
       }
 
       revealOverlay();
@@ -327,9 +367,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [
     currentVideo,
+    contextMenuState.isOpen,
     controlSettings.seek,
+    handleRelativeSeek,
     onTogglePlayPause,
-    onSeekBy,
     onSeekToStart,
     onSeekToEnd,
     onAdjustPlaybackRate,
@@ -337,6 +378,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     onAdjustVolume,
     onToggleMute,
     toggleFullscreen,
+    onToggleTheaterMode,
     revealOverlay,
     showHud,
   ]);
@@ -363,7 +405,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const isVideoEnded = Boolean(videoRef.current?.ended);
 
-  // Controls stay visible while active, interacting, keyboard-focused, ended, autoplay-blocked, or in error/empty state
+  // Controls stay visible while active, interacting, keyboard-focused, ended, autoplay-blocked, in error/empty state, or context menu open
   const controlsVisible =
     userActive ||
     isInteractingWithControls ||
@@ -371,7 +413,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     isVideoEnded ||
     autoplayBlocked ||
     Boolean(playerError) ||
-    !videoSrc;
+    !videoSrc ||
+    contextMenuState.isOpen;
 
   return (
     <div
@@ -419,6 +462,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               controlsVisible ? 'cursor-pointer' : 'cursor-none'
             }`}
             onClick={() => {
+              if (contextMenuState.isOpen || Date.now() - justClosedContextMenuAtRef.current < 200) {
+                closeContextMenu();
+                return;
+              }
               const isTouchReveal =
                 wasControlsHiddenOnTouchRef.current &&
                 Date.now() - lastTouchStartAtRef.current < 800;
@@ -432,6 +479,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               }
             }}
             onDoubleClick={toggleFullscreen}
+            onContextMenu={handleContextMenu}
             onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={onTimeUpdate}
             onPlay={onPlay}
@@ -480,7 +528,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* Top-Right: Icon-only Theater Mode & Autoplay On/Off */}
             <div className="flex items-center gap-1.5 shrink-0">
               <Tooltip
-                content={isTheaterMode ? 'Exit Theater Mode (Esc)' : 'Enter Theater Mode'}
+                content={isTheaterMode ? 'Exit Theater Mode (Esc / T)' : 'Enter Theater Mode (T)'}
                 placement="bottom"
                 disabled={!controlsVisible}
               >
@@ -616,6 +664,77 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <p className="text-sm font-medium text-slate-400">Select a video from the playlist</p>
         </div>
       )}
+
+      {/* Custom Video Context Menu */}
+      <VideoContextMenu
+        isOpen={contextMenuState.isOpen}
+        anchorX={contextMenuState.anchorX}
+        anchorY={contextMenuState.anchorY}
+        containerRef={containerRef}
+        controlSettings={controlSettings}
+        currentPlaybackRate={playbackRate ?? videoRef.current?.playbackRate ?? controlSettings.playbackRate.default}
+        currentVolume={volume}
+        isMuted={muted}
+        isFullscreen={isFullscreen}
+        isTheaterMode={isTheaterMode}
+        isPlayable={Boolean(currentVideo && videoSrc && !playerError)}
+        onClose={closeContextMenu}
+        onSeekBackwardFine={() => handleRelativeSeek(-controlSettings.seek.fineSeconds)}
+        onSeekForwardFine={() => handleRelativeSeek(controlSettings.seek.fineSeconds)}
+        onSeekBackwardMedium={() => handleRelativeSeek(-controlSettings.seek.nearSeconds)}
+        onSeekForwardMedium={() => handleRelativeSeek(controlSettings.seek.nearSeconds)}
+        onSeekBackwardLarge={() => handleRelativeSeek(-controlSettings.seek.farSeconds)}
+        onSeekForwardLarge={() => handleRelativeSeek(controlSettings.seek.farSeconds)}
+        onSeekToStart={() => {
+          seekAccumulatorRef.current = null;
+          if (onSeekToStart() !== false) {
+            showHud('rewind', 'Start');
+          }
+        }}
+        onSeekToEnd={() => {
+          seekAccumulatorRef.current = null;
+          if (onSeekToEnd() !== false) {
+            showHud('fast-forward', 'End');
+          }
+        }}
+        onDecreasePlaybackRate={() => {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onAdjustPlaybackRate(-1);
+          showHud('speed', formatPlaybackRate(appliedRate));
+        }}
+        onIncreasePlaybackRate={() => {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onAdjustPlaybackRate(1);
+          showHud('speed', formatPlaybackRate(appliedRate));
+        }}
+        onToggleMaxPlaybackRate={() => {
+          seekAccumulatorRef.current = null;
+          const appliedRate = onToggleMaxPlaybackRate();
+          showHud('speed', formatPlaybackRate(appliedRate));
+        }}
+        onDecreaseVolume={() => {
+          seekAccumulatorRef.current = null;
+          const appliedVolume = onAdjustVolume(-1);
+          showHud('volume-down', formatVolumePercent(appliedVolume));
+        }}
+        onIncreaseVolume={() => {
+          seekAccumulatorRef.current = null;
+          const appliedVolume = onAdjustVolume(1);
+          showHud('volume-up', formatVolumePercent(appliedVolume));
+        }}
+        onToggleMute={() => {
+          seekAccumulatorRef.current = null;
+          const muteResult = onToggleMute();
+          if (muteResult) {
+            showHud(
+              muteResult.muted ? 'volume-muted' : 'volume-up',
+              muteResult.muted ? 'Muted' : formatVolumePercent(muteResult.volume)
+            );
+          }
+        }}
+        onToggleFullscreen={toggleFullscreen}
+        onToggleTheaterMode={onToggleTheaterMode}
+      />
     </div>
   );
 };

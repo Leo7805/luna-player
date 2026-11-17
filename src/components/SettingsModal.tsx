@@ -36,6 +36,7 @@ const SHORTCUT_REFERENCE: ReadonlyArray<{ keys: string; label: string }> = [
   { keys: '↑ / ↓', label: 'Large seek − / +' },
   { keys: '< / >', label: 'Jump to Start / End' },
   { keys: 'F', label: 'Fullscreen' },
+  { keys: 'T', label: 'Theater Mode' },
 ];
 
 interface NumberFieldProps {

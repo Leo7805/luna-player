@@ -58,6 +58,7 @@ export function App() {
     duration,
     volume,
     muted,
+    playbackRate,
     currentIndex,
     totalCount,
     hasNext,
@@ -300,6 +301,7 @@ export function App() {
                   duration={duration}
                   volume={volume}
                   muted={muted}
+                  playbackRate={playbackRate}
                   currentIndex={currentIndex}
                   totalCount={totalCount}
                   hasNext={hasNext}
