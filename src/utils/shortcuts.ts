@@ -132,7 +132,7 @@ export function isInteractiveOrEditableTarget(target: EventTarget | null): boole
  */
 export function hasBlockingModalOpen(root: Pick<Document, 'querySelector'> = document): boolean {
   return Boolean(
-    root.querySelector('[role="dialog"], [aria-modal="true"], [data-testid="extract-audio-modal"]')
+    root.querySelector('[role="dialog"], [aria-modal="true"], [role="menu"], [data-testid="extract-audio-modal"]')
   );
 }
 

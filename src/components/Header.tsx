@@ -56,7 +56,7 @@ export function Header({
           </div>
         </div>
 
-        {/* Actions (Right: Open Videos Pill + Menu + Theme Toggle) */}
+        {/* Actions (Right: Open Videos Split Button + Settings + Theme Toggle) */}
         <div className="flex items-center justify-end gap-2 sm:gap-2.5 min-w-0 flex-1">
           <OpenVideosControl
             variant="header"

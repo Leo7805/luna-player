@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { FolderOpen, Film, MoreHorizontal } from 'lucide-react';
+import { FolderOpen, Film, MoreHorizontal, ChevronDown } from 'lucide-react';
 import { OpenVideoMode } from '../utils/platform';
 import { VideoLibrary } from '../types/video';
 import { Tooltip } from './Tooltip';
@@ -137,7 +137,12 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
   const isFilesMode = library?.sourceType === 'files';
 
   return (
-    <div ref={containerRef} className="relative inline-flex items-center gap-1.5 min-w-0">
+    <div
+      ref={containerRef}
+      className={`relative inline-flex items-center min-w-0 ${
+        variant === 'empty-state' ? 'gap-1.5' : ''
+      }`}
+    >
       {/* Hidden Folder Input Fallback (macOS Safari / non-FSA browsers) */}
       <input
         ref={folderFallbackInputRef}
@@ -208,7 +213,11 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
         </>
       ) : (
         library && (
-          <>
+          <div
+            data-testid="header-split-button"
+            className="inline-flex items-stretch rounded-full glass-panel-subtle border border-slate-300/80 dark:border-white/15 text-xs min-w-0 max-w-full"
+          >
+            {/* Main Area: Folder Information */}
             <Tooltip
               content={
                 defaultOpenMode === 'files'
@@ -225,7 +234,7 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
                   triggerDefaultOpen();
                 }}
                 disabled={isScanning}
-                className="group flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full glass-panel-subtle text-xs border border-slate-300/80 dark:border-white/15 hover:bg-slate-200/70 dark:hover:bg-white/10 hover:border-sky-500/40 dark:hover:border-sky-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer disabled:opacity-50 min-w-0 max-w-full"
+                className="group flex items-center gap-1.5 sm:gap-2 pl-3 sm:pl-3.5 pr-2 sm:pr-2.5 py-1.5 rounded-l-full hover:bg-slate-200/70 dark:hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:z-10 transition-colors cursor-pointer disabled:opacity-50 min-w-0"
                 aria-label="Open Videos"
                 data-testid="folder-switch-pill"
               >
@@ -258,6 +267,13 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
               </button>
             </Tooltip>
 
+            {/* Subtle Vertical Separator */}
+            <div
+              className="w-px my-1.5 bg-slate-300/80 dark:bg-white/15 shrink-0"
+              aria-hidden="true"
+            />
+
+            {/* Dropdown Area: ChevronDown */}
             <Tooltip content="More opening options" placement="bottom" disabled={menuOpen}>
               <button
                 ref={menuButtonRef}
@@ -268,12 +284,16 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 data-testid="header-open-menu-button"
-                className="glass-button p-2 rounded-xl text-slate-700 dark:text-slate-200 hover:text-sky-700 dark:hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer shrink-0 disabled:opacity-50"
+                className="flex items-center justify-center px-2 sm:px-2.5 py-1.5 rounded-r-full text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:z-10 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                    menuOpen ? 'rotate-180' : ''
+                  }`}
+                />
               </button>
             </Tooltip>
-          </>
+          </div>
         )
       )}
 
