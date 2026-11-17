@@ -137,7 +137,7 @@ export async function createMpegTsPlayer({
 
   /**
    * Synchronize finite stream duration to MediaSource.
-   * Prevents duration reverting to +Infinity or NaN when demuxing live-like segments.
+   * Prevents duration reverting to +Infinity, NaN, or expanding to erroneous timestamps.
    */
   const syncMediaSourceDuration = () => {
     try {
@@ -149,7 +149,7 @@ export async function createMpegTsPlayer({
       ) {
         if (
           !Number.isFinite(mseController._mediaSource.duration) ||
-          mseController._mediaSource.duration < indexResult.duration - 0.5
+          Math.abs(mseController._mediaSource.duration - indexResult.duration) > 0.5
         ) {
           mseController._mediaSource.duration = indexResult.duration;
         }
@@ -195,29 +195,64 @@ export async function createMpegTsPlayer({
         applyMediaInfoIndex();
         syncMediaSourceDuration();
 
-        /**
-         * Audio Discontinuity Handling:
-         * Calling `insertDiscontinuity()` resets `_audioNextDts` inside mpegts.js remuxer.
-         * This prevents the remuxer from attempting to fill a time gap with thousands
-         * of silent audio frames if there is an audio PTS mismatch after seeking.
-         */
         const controller = (player as any)._player_engine?._transmuxer?._controller;
-        if (controller?._remuxer && typeof controller._remuxer.insertDiscontinuity === 'function') {
-          controller._remuxer.insertDiscontinuity();
+        if (controller) {
+          // 1. Reset demuxer packet slice queues, PCR tracking, and timestamp offset
+          // to prevent stale slices or false 33-bit PCR wraparound across seek boundaries
+          if (controller._demuxer) {
+            controller._demuxer.pes_slice_queues_ = {};
+            controller._demuxer.section_slice_queues_ = {};
+            controller._demuxer.last_pcr_ = undefined;
+            controller._demuxer.last_pcr_base_ = NaN;
+            controller._demuxer.timestamp_offset_ = 0;
+            controller._demuxer.audio_last_sample_pts_ = undefined;
+            controller._demuxer.aac_last_incomplete_data_ = null;
+            if (controller._demuxer.video_track_) {
+              controller._demuxer.video_track_.samples = [];
+              controller._demuxer.video_track_.length = 0;
+            }
+            if (controller._demuxer.audio_track_) {
+              controller._demuxer.audio_track_.samples = [];
+              controller._demuxer.audio_track_.length = 0;
+            }
+          }
+
+          // 2. Clear remuxer stashed samples, segment info lists, and next DTS
+          if (controller._remuxer) {
+            if (typeof controller._remuxer.seek === 'function') {
+              controller._remuxer.seek(seconds * 1000);
+            }
+            if (typeof controller._remuxer.insertDiscontinuity === 'function') {
+              controller._remuxer.insertDiscontinuity();
+            }
+          }
+
+          // 3. Clear IO stash buffer
+          if (controller._ioctl) {
+            controller._ioctl._stashUsed = 0;
+            controller._ioctl._stashByteStart = 0;
+          }
         }
 
+        // 4. Delegate seek to player.currentTime and synchronize videoElement safely.
+        // If seekingHandler exists, mark _request_set_current_time = true to prevent
+        // SeekingHandler._onMediaSeeking from treating videoElement.currentTime assignment
+        // as an external unbuffered seek and scheduling a duplicate unbuffered seek 50ms later.
+        const seekingHandler = (player as any)._player_engine?._seeking_handler;
+        if (seekingHandler) {
+          seekingHandler._request_set_current_time = true;
+        }
         player.currentTime = seconds;
         try {
+          if (seekingHandler) {
+            seekingHandler._request_set_current_time = true;
+          }
           videoElement.currentTime = seconds;
         } catch {
           // ignore if video element is not ready
         }
-      } catch {
-        try {
-          videoElement.currentTime = seconds;
-        } catch {
-          // ignore seek error
-        }
+      } catch (err: unknown) {
+        console.warn('[MPEG-TS Player] Seek error:', err);
       }
     },
     destroy: () => {

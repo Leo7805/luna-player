@@ -30,6 +30,7 @@ export class FileBlobLoader {
   protected _status: number = LoaderStatus.kIdle;
   protected _needStash: boolean = true;
   protected _aborted: boolean = false;
+  protected _currentRequestId: number = 0;
   // 188 bytes * 1024 = 192,512 bytes (integer multiple of MPEG-TS packets)
   protected _chunkSize: number = 188 * 1024;
   protected _contextFile?: File;
@@ -79,11 +80,13 @@ export class FileBlobLoader {
   }
 
   public abort(): void {
+    this._currentRequestId++;
     this._aborted = true;
     this._status = LoaderStatus.kIdle;
   }
 
   public async open(dataSource: FileBlobDataSource, range: RangeRequest): Promise<void> {
+    const requestId = ++this._currentRequestId;
     this._aborted = false;
     this._status = LoaderStatus.kConnecting;
 
@@ -102,7 +105,7 @@ export class FileBlobLoader {
     const syncOffset = Math.max(0, dataSource?.syncOffset ?? this._contextSyncOffset ?? 0);
     const totalStreamLength = Math.max(0, file.size - syncOffset);
 
-    if (this.onContentLengthKnown) {
+    if (this.onContentLengthKnown && requestId === this._currentRequestId && !this._aborted) {
       this.onContentLengthKnown(totalStreamLength);
     }
 
@@ -120,12 +123,12 @@ export class FileBlobLoader {
 
     let offset = 0;
     try {
-      while (offset < requestLength && !this._aborted) {
+      while (offset < requestLength && !this._aborted && requestId === this._currentRequestId) {
         const currentChunkSize = Math.min(this._chunkSize, requestLength - offset);
         const chunkSlice = file.slice(fileStart + offset, fileStart + offset + currentChunkSize);
         const arrayBuf = await chunkSlice.arrayBuffer();
 
-        if (this._aborted) break;
+        if (this._aborted || requestId !== this._currentRequestId) break;
 
         if (this.onDataArrival) {
           this.onDataArrival(arrayBuf, rangeFrom + offset, arrayBuf.byteLength);
@@ -135,16 +138,17 @@ export class FileBlobLoader {
 
         // Yield to the browser event loop so demuxer and MSE buffer processing can run smoothly
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (this._aborted || requestId !== this._currentRequestId) break;
       }
 
-      if (!this._aborted) {
+      if (!this._aborted && requestId === this._currentRequestId) {
         this._status = LoaderStatus.kComplete;
         if (this.onComplete) {
           this.onComplete(rangeFrom, rangeFrom + offset - 1);
         }
       }
     } catch (err: unknown) {
-      if (!this._aborted) {
+      if (!this._aborted && requestId === this._currentRequestId) {
         this._status = LoaderStatus.kError;
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[FileBlobLoader] Read exception:', err);

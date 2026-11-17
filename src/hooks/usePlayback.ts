@@ -322,7 +322,9 @@ export function usePlayback({
     }
     const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
     const nextDuration =
-      Number.isFinite(videoEl.duration) && videoEl.duration > 0
+      isMpegTs && knownDuration > 0
+        ? knownDuration
+        : Number.isFinite(videoEl.duration) && videoEl.duration > 0
         ? videoEl.duration
         : knownDuration > 0
         ? knownDuration
@@ -362,7 +364,7 @@ export function usePlayback({
         attemptPlay(videoEl, activeSelectionTokenRef.current);
       }
     }
-  }, [attemptPlay]);
+  }, [attemptPlay, isMpegTs]);
 
   // Throttled timeupdate for saving playback progress
   const lastSavedTimeRef = useRef(0);
@@ -377,15 +379,27 @@ export function usePlayback({
     const durationVal = videoEl.duration;
     const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
 
-    setCurrentTime(Number.isFinite(currentTimeVal) ? currentTimeVal : 0);
-    if (Number.isFinite(durationVal) && durationVal > 0) {
+    const sanitizedTime = Number.isFinite(currentTimeVal) ? currentTimeVal : 0;
+    setCurrentTime(
+      isMpegTs && knownDuration > 0 && sanitizedTime > knownDuration + 5
+        ? knownDuration
+        : sanitizedTime
+    );
+
+    if (isMpegTs && knownDuration > 0) {
+      setDuration(knownDuration);
+    } else if (Number.isFinite(durationVal) && durationVal > 0) {
       setDuration(durationVal);
     } else if (knownDuration > 0) {
       setDuration(knownDuration);
     }
 
     const effectiveDuration =
-      Number.isFinite(durationVal) && durationVal > 0 ? durationVal : knownDuration;
+      isMpegTs && knownDuration > 0
+        ? knownDuration
+        : Number.isFinite(durationVal) && durationVal > 0
+        ? durationVal
+        : knownDuration;
 
     // Save roughly every 4 seconds or when near end
     const now = Date.now();
@@ -400,7 +414,7 @@ export function usePlayback({
         effectiveDuration
       );
     }
-  }, []);
+  }, [isMpegTs]);
 
   // Handle video play
   const handlePlay = useCallback(() => {
@@ -421,7 +435,11 @@ export function usePlayback({
 
     const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
     const effectiveDuration =
-      Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+      isMpegTs && knownDuration > 0
+        ? knownDuration
+        : Number.isFinite(videoEl.duration) && videoEl.duration > 0
+        ? videoEl.duration
+        : knownDuration;
 
     saveVideoProgress(
       currentLib.id,
@@ -431,7 +449,7 @@ export function usePlayback({
       videoEl.currentTime,
       effectiveDuration
     );
-  }, []);
+  }, [isMpegTs]);
 
   // Handle video seeked
   const handleSeeked = useCallback(() => {
@@ -447,7 +465,11 @@ export function usePlayback({
 
     const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
     const effectiveDuration =
-      Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+      isMpegTs && knownDuration > 0
+        ? knownDuration
+        : Number.isFinite(videoEl.duration) && videoEl.duration > 0
+        ? videoEl.duration
+        : knownDuration;
 
     saveVideoProgress(
       currentLib.id,
@@ -457,7 +479,7 @@ export function usePlayback({
       videoEl.currentTime,
       effectiveDuration
     );
-  }, []);
+  }, [isMpegTs]);
 
   // Video playback error handling
   const handleVideoError = useCallback(() => {
@@ -497,7 +519,11 @@ export function usePlayback({
     if (video && currentLib && videoEl) {
       const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
       const effectiveDuration =
-        Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : knownDuration;
+        isMpegTs && knownDuration > 0
+          ? knownDuration
+          : Number.isFinite(videoEl.duration) && videoEl.duration > 0
+          ? videoEl.duration
+          : knownDuration;
 
       if (effectiveDuration > 0) {
         setCurrentTime(effectiveDuration);
@@ -522,7 +548,7 @@ export function usePlayback({
         playNext();
       }
     }
-  }, [autoplayNext, playNext]);
+  }, [autoplayNext, playNext, isMpegTs]);
 
   const handleManualPlay = useCallback(() => {
     if (videoRef.current) {
@@ -542,28 +568,33 @@ export function usePlayback({
     }
   }, [attemptPlay]);
 
-  const seekTo = useCallback((time: number) => {
-    const videoEl = videoRef.current;
-    if (!videoEl || !Number.isFinite(time)) return;
-    const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
-    const maxTime =
-      Number.isFinite(videoEl.duration) && videoEl.duration > 0
-        ? videoEl.duration
-        : knownDuration > 0
-        ? knownDuration
-        : 0;
-    const clamped = Math.max(0, Math.min(time, maxTime));
-    try {
-      if (mpegtsAdapterRef.current) {
-        mpegtsAdapterRef.current.seek(clamped);
-      } else {
-        videoEl.currentTime = clamped;
+  const seekTo = useCallback(
+    (time: number) => {
+      const videoEl = videoRef.current;
+      if (!videoEl || !Number.isFinite(time)) return;
+      const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
+      const maxTime =
+        isMpegTs && knownDuration > 0
+          ? knownDuration
+          : Number.isFinite(videoEl.duration) && videoEl.duration > 0
+          ? videoEl.duration
+          : knownDuration > 0
+          ? knownDuration
+          : 0;
+      const clamped = Math.max(0, Math.min(time, maxTime));
+      try {
+        if (mpegtsAdapterRef.current) {
+          mpegtsAdapterRef.current.seek(clamped);
+        } else {
+          videoEl.currentTime = clamped;
+        }
+      } catch {
+        // Ignore invalid seek state before metadata is ready
       }
-    } catch {
-      // Ignore invalid seek state before metadata is ready
-    }
-    setCurrentTime(clamped);
-  }, []);
+      setCurrentTime(clamped);
+    },
+    [isMpegTs]
+  );
 
   const seekBy = useCallback(
     (deltaSeconds: number): boolean => {
@@ -587,14 +618,16 @@ export function usePlayback({
     if (!videoEl) return false;
     const knownDuration = mpegtsAdapterRef.current?.duration ?? 0;
     const maxTime =
-      Number.isFinite(videoEl.duration) && videoEl.duration > 0
+      isMpegTs && knownDuration > 0
+        ? knownDuration
+        : Number.isFinite(videoEl.duration) && videoEl.duration > 0
         ? videoEl.duration
         : knownDuration > 0
         ? knownDuration
         : 0;
     seekTo(Math.max(0, maxTime - END_SEEK_OFFSET_SECONDS));
     return true;
-  }, [seekTo]);
+  }, [isMpegTs, seekTo]);
 
   const applyPlaybackRate = useCallback((targetRate: number): number => {
     const { min, max } = controlSettingsRef.current.playbackRate;
