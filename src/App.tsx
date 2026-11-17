@@ -209,32 +209,20 @@ export function App() {
         isTheaterActive
           ? 'bg-black text-slate-100'
           : theme === 'dark'
-          ? 'text-slate-100'
-          : 'text-slate-900'
+          ? 'bg-[#071427] text-slate-100'
+          : 'bg-[#CFDBE7] text-slate-900'
       }`}
     >
-      {/* Distant Panoramic Mountain Backdrop (hidden in Theater Mode) */}
+      {/* Modern Background (hidden in Theater Mode) */}
       {!isTheaterActive && (
-        <>
-          <div
-            className={`fixed inset-0 pointer-events-none z-0 bg-cover bg-center md:bg-[center_35%] bg-no-repeat transition-all duration-700 ${
-              theme === 'dark'
-                ? 'brightness-[0.82] contrast-[1.05] saturate-[0.95]'
-                : 'brightness-[1.02] contrast-[0.98] saturate-[1.05]'
-            }`}
-            style={{ backgroundImage: "url('/assets/scenery-distant.jpeg')" }}
-            data-testid="scenic-background"
-          />
-
-          {/* Theme-Aware Atmospheric Ambient Overlays & Subtle Blur */}
-          <div
-            className={`fixed inset-0 pointer-events-none z-0 transition-all duration-500 ${
-              theme === 'dark'
-                ? 'bg-slate-950/45 backdrop-blur-[2.5px]'
-                : 'bg-gradient-to-b from-sky-950/10 via-sky-500/5 to-slate-900/15 backdrop-blur-[1.5px]'
-            }`}
-          />
-        </>
+        <div
+          className={`fixed inset-0 pointer-events-none z-0 transition-colors duration-500 ${
+            theme === 'dark'
+              ? 'bg-gradient-to-b from-[#102443] to-[#071427]'
+              : 'bg-[#CFDBE7]'
+          }`}
+          data-testid="app-background"
+        />
       )}
 
       {/* Foreground Content Container */}

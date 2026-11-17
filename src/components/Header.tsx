@@ -35,8 +35,8 @@ export function Header({
 }: HeaderProps) {
 
   return (
-    <header className="glass-panel sticky top-0 z-40 px-4 py-3 sm:px-6 backdrop-blur-xl transition-colors duration-300">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 sm:gap-4 min-w-0">
+    <header className="glass-panel sticky top-0 z-40 px-4 py-3 sm:px-6 lg:px-8 backdrop-blur-xl transition-colors duration-300">
+      <div className="w-full flex items-center justify-between gap-3 sm:gap-4 min-w-0">
         {/* Brand (Left) */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
           <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center shrink-0">

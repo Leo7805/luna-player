@@ -486,7 +486,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           ? 'relative w-screen h-screen max-w-none max-h-none rounded-none border-none'
           : isTheaterMode
           ? 'fixed inset-0 z-50 w-dvw h-dvh max-w-none max-h-none rounded-none border-none'
-          : 'relative w-full mx-auto aspect-video rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800/80'
+          : 'relative w-full mx-auto aspect-video rounded-2xl shadow-[0_10px_25px_-5px_rgba(15,23,42,0.08),0_1px_3px_0_rgba(15,23,42,0.05)] dark:shadow-2xl'
       }`}
     >
       {currentVideo ? (
@@ -705,6 +705,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <Film className="w-12 h-12 mb-3 stroke-[1.5] text-slate-600" />
           <p className="text-sm font-medium text-slate-400">Select a video from the playlist</p>
         </div>
+      )}
+
+      {/* Outer Video Frame Border Overlay (Light mode: #C7D8E9, Dark mode: white/10) */}
+      {!isFullscreen && !isTheaterMode && (
+        <div
+          data-testid="video-frame-border"
+          className="pointer-events-none absolute inset-0 z-30 rounded-2xl border border-[#C7D8E9] dark:border-white/10"
+          aria-hidden="true"
+        />
       )}
 
       {/* Custom Video Context Menu */}
