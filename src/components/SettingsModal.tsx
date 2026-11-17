@@ -2,15 +2,31 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   RotateCcw,
+  RotateCw,
   Keyboard,
   Gauge,
   FastForward,
   Volume2,
+  Volume1,
+  VolumeX,
   ChevronUp,
   ChevronDown,
+  Play,
+  Maximize,
+  Tv,
+  ArrowLeft,
+  ArrowRight,
+  ChevronsLeft,
+  ChevronsRight,
+  SkipBack,
+  SkipForward,
+  Minus,
+  Plus,
+  MoveHorizontal,
 } from 'lucide-react';
 import { CONTROL_LIMITS, type ControlSettings } from '../config/controlSettings';
 import { blurButtonAfterPointerClick } from '../utils/shortcuts';
+import { formatSeekDuration } from '../utils/contextMenuPosition';
 import {
   createDefaultSettingsDraft,
   createSettingsDraft,
@@ -25,19 +41,35 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-const SHORTCUT_REFERENCE: ReadonlyArray<{ keys: string; label: string }> = [
-  { keys: 'Space / K', label: 'Play / Pause' },
-  { keys: '[ / ]', label: 'Playback speed − / +' },
-  { keys: '\\', label: 'Toggle 1× / Max speed' },
-  { keys: '; / \'', label: 'Volume − / +' },
-  { keys: 'Enter / M', label: 'Mute / Unmute' },
-  { keys: ', / .', label: 'Fine seek − / +' },
-  { keys: '← / →', label: 'Medium seek − / +' },
-  { keys: '↑ / ↓', label: 'Large seek − / +' },
-  { keys: '< / >', label: 'Jump to Start / End' },
-  { keys: 'F', label: 'Fullscreen' },
-  { keys: 'T', label: 'Theater Mode' },
-];
+interface ShortcutRowProps {
+  icon: React.ReactNode;
+  label: string;
+  value?: string;
+  shortcut: string;
+  testId?: string;
+}
+
+const ShortcutRow: React.FC<ShortcutRowProps> = ({ icon, label, value, shortcut, testId }) => (
+  <div
+    data-testid={testId}
+    className="flex items-center w-full h-[30px] px-2.5 rounded-lg text-left select-none transition-colors hover:bg-slate-200/50 dark:hover:bg-white/[0.04]"
+  >
+    <span className="text-slate-400 dark:text-slate-400 light:text-slate-500 shrink-0 flex items-center justify-center">
+      {icon}
+    </span>
+    <span className="flex-1 ml-2.5 text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+      {label}
+    </span>
+    {value && (
+      <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400 mr-2.5 shrink-0 font-normal">
+        {value}
+      </span>
+    )}
+    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[19px] px-1.5 rounded border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-900/60 font-mono text-[11px] font-medium text-slate-600 dark:text-slate-300 text-center shrink-0">
+      {shortcut}
+    </kbd>
+  </div>
+);
 
 interface NumberFieldProps {
   label: string;
@@ -139,6 +171,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const { errors, isValid, parsed } = validateSettingsDraft(draft);
 
+  const fineSec = Number(draft.fineSeconds);
+  const fineDuration = Number.isFinite(fineSec) && fineSec > 0 ? fineSec : settings.seek.fineSeconds;
+
+  const nearSec = Number(draft.nearSeconds);
+  const nearDuration = Number.isFinite(nearSec) && nearSec > 0 ? nearSec : settings.seek.nearSeconds;
+
+  const farSec = Number(draft.farSeconds);
+  const farDuration = Number.isFinite(farSec) && farSec > 0 ? farSec : settings.seek.farSeconds;
+
+  const maxRate = Number(draft.speedMax);
+  const maxSpeed = Number.isFinite(maxRate) && maxRate > 0 ? maxRate : settings.playbackRate.max;
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValid || !parsed) return;
@@ -191,23 +235,173 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-4 space-y-5 custom-scrollbar"
         >
           {/* 1. Keyboard Shortcuts (Read-Only) */}
-          <section aria-labelledby="settings-shortcuts-heading" className="space-y-2.5">
+          <section aria-labelledby="settings-shortcuts-heading" className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
               <Keyboard className="w-3.5 h-3.5" />
               <h3 id="settings-shortcuts-heading">Keyboard Shortcuts</h3>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {SHORTCUT_REFERENCE.map((item) => (
-                <div
-                  key={item.keys}
-                  className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-slate-100/80 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-xs"
-                >
-                  <span className="text-slate-700 dark:text-slate-300">{item.label}</span>
-                  <kbd className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-white/15 font-mono text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 shrink-0">
-                    {item.keys}
-                  </kbd>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {/* Column 1: Playback, Playback Speed, Volume */}
+              <div className="space-y-3">
+                {/* Playback */}
+                <div className="space-y-1.5">
+                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                    Playback
+                  </h4>
+                  <div className="rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-1 divide-y divide-slate-200/60 dark:divide-white/5">
+                    <ShortcutRow
+                      icon={<Play className="w-3.5 h-3.5" />}
+                      label="Play / Pause"
+                      shortcut="Space / K"
+                      testId="shortcut-play-pause"
+                    />
+                    <ShortcutRow
+                      icon={<Maximize className="w-3.5 h-3.5" />}
+                      label="Fullscreen"
+                      shortcut="F"
+                      testId="shortcut-fullscreen"
+                    />
+                    <ShortcutRow
+                      icon={<Tv className="w-3.5 h-3.5" />}
+                      label="Theater Mode"
+                      shortcut="T"
+                      testId="shortcut-theater"
+                    />
+                  </div>
                 </div>
-              ))}
+
+                {/* Playback Speed */}
+                <div className="space-y-1.5">
+                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                    Playback Speed
+                  </h4>
+                  <div className="rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-1 divide-y divide-slate-200/60 dark:divide-white/5">
+                    <ShortcutRow
+                      icon={<Minus className="w-3.5 h-3.5" />}
+                      label="Slower"
+                      shortcut="["
+                      testId="shortcut-speed-slower"
+                    />
+                    <ShortcutRow
+                      icon={<Plus className="w-3.5 h-3.5" />}
+                      label="Faster"
+                      shortcut="]"
+                      testId="shortcut-speed-faster"
+                    />
+                    <ShortcutRow
+                      icon={<MoveHorizontal className="w-3.5 h-3.5" />}
+                      label="Toggle 1× / Max"
+                      value={`1× / ${maxSpeed}×`}
+                      shortcut="\"
+                      testId="shortcut-speed-toggle"
+                    />
+                  </div>
+                </div>
+
+                {/* Volume */}
+                <div className="space-y-1.5">
+                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                    Volume
+                  </h4>
+                  <div className="rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-1 divide-y divide-slate-200/60 dark:divide-white/5">
+                    <ShortcutRow
+                      icon={<Volume1 className="w-3.5 h-3.5" />}
+                      label="Volume −"
+                      shortcut=";"
+                      testId="shortcut-volume-decrease"
+                    />
+                    <ShortcutRow
+                      icon={<Volume2 className="w-3.5 h-3.5" />}
+                      label="Volume +"
+                      shortcut="'"
+                      testId="shortcut-volume-increase"
+                    />
+                    <ShortcutRow
+                      icon={<VolumeX className="w-3.5 h-3.5" />}
+                      label="Mute / Unmute"
+                      shortcut="Enter / M"
+                      testId="shortcut-volume-mute"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: Seeking */}
+              <div className="space-y-1.5">
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">
+                  Seeking
+                </h4>
+                <div className="rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-1 space-y-0.5">
+                  {/* Fine Seek */}
+                  <ShortcutRow
+                    icon={<RotateCcw className="w-3.5 h-3.5" />}
+                    label="Back"
+                    value={formatSeekDuration(fineDuration, false)}
+                    shortcut=","
+                    testId="shortcut-seek-fine-back"
+                  />
+                  <ShortcutRow
+                    icon={<RotateCw className="w-3.5 h-3.5" />}
+                    label="Forward"
+                    value={formatSeekDuration(fineDuration, true)}
+                    shortcut="."
+                    testId="shortcut-seek-fine-forward"
+                  />
+
+                  <div className="h-px my-1 bg-slate-200/80 dark:bg-white/10" />
+
+                  {/* Medium Seek */}
+                  <ShortcutRow
+                    icon={<ArrowLeft className="w-3.5 h-3.5" />}
+                    label="Back"
+                    value={formatSeekDuration(nearDuration, false)}
+                    shortcut="←"
+                    testId="shortcut-seek-near-back"
+                  />
+                  <ShortcutRow
+                    icon={<ArrowRight className="w-3.5 h-3.5" />}
+                    label="Forward"
+                    value={formatSeekDuration(nearDuration, true)}
+                    shortcut="→"
+                    testId="shortcut-seek-near-forward"
+                  />
+
+                  <div className="h-px my-1 bg-slate-200/80 dark:bg-white/10" />
+
+                  {/* Large Seek */}
+                  <ShortcutRow
+                    icon={<ChevronsLeft className="w-3.5 h-3.5" />}
+                    label="Back"
+                    value={formatSeekDuration(farDuration, false)}
+                    shortcut="↑"
+                    testId="shortcut-seek-far-back"
+                  />
+                  <ShortcutRow
+                    icon={<ChevronsRight className="w-3.5 h-3.5" />}
+                    label="Forward"
+                    value={formatSeekDuration(farDuration, true)}
+                    shortcut="↓"
+                    testId="shortcut-seek-far-forward"
+                  />
+
+                  <div className="h-px my-1 bg-slate-200/80 dark:bg-white/10" />
+
+                  {/* Jump to Start / End */}
+                  <ShortcutRow
+                    icon={<SkipBack className="w-3.5 h-3.5" />}
+                    label="Jump to Start"
+                    shortcut="<"
+                    testId="shortcut-seek-start"
+                  />
+                  <ShortcutRow
+                    icon={<SkipForward className="w-3.5 h-3.5" />}
+                    label="Jump to End"
+                    shortcut=">"
+                    testId="shortcut-seek-end"
+                  />
+                </div>
+              </div>
             </div>
           </section>
 

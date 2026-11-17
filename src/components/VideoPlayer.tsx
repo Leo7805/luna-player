@@ -49,7 +49,7 @@ interface VideoPlayerProps {
   autoplayNext: boolean;
   isTheaterMode: boolean;
   controlSettings?: ControlSettings;
-  onToggleTheaterMode: () => void;
+  onToggleTheaterMode: (forceState?: boolean) => void;
   onToggleAutoplayNext: () => void;
   onTogglePlayPause: () => 'play' | 'pause' | null | void;
   onSeek: (time: number) => void;
@@ -227,27 +227,63 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, []);
 
+  const handleToggleTheaterMode = useCallback(async () => {
+    if (document.fullscreenElement) {
+      // Fullscreen -> Theater: exit fullscreen first, then enter theater
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Ignore exit failure
+      }
+      onToggleTheaterMode(true);
+    } else {
+      // Normal -> Theater OR Theater -> Normal
+      onToggleTheaterMode();
+    }
+  }, [onToggleTheaterMode]);
+
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
     if (!el) return;
 
-    try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen();
-      } else {
+    if (document.fullscreenElement) {
+      // Fullscreen -> Normal
+      try {
         await document.exitFullscreen();
+      } catch {
+        // Fallback / ignore
       }
-    } catch {
-      // Fallback if container fullscreen fails on specific mobile browsers
-      if (videoRef.current && 'webkitEnterFullscreen' in videoRef.current) {
-        try {
-          (videoRef.current as unknown as { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
-        } catch {
-          // Ignore
+      if (isTheaterMode) {
+        onToggleTheaterMode(false);
+      }
+    } else {
+      // Normal -> Fullscreen OR Theater -> Fullscreen
+      const wasTheater = isTheaterMode;
+      if (wasTheater) {
+        // Exit theater mode synchronously before requesting fullscreen
+        onToggleTheaterMode(false);
+      }
+
+      try {
+        await el.requestFullscreen();
+      } catch {
+        // Fallback if container fullscreen fails on specific mobile browsers
+        let handledByFallback = false;
+        if (videoRef.current && 'webkitEnterFullscreen' in videoRef.current) {
+          try {
+            (videoRef.current as unknown as { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
+            handledByFallback = true;
+          } catch {
+            // Ignore
+          }
+        }
+        if (!handledByFallback && wasTheater) {
+          // If requestFullscreen failed, revert theater mode to avoid misleading state
+          onToggleTheaterMode(true);
         }
       }
     }
-  }, [videoRef]);
+  }, [isTheaterMode, onToggleTheaterMode, videoRef]);
 
   // Keyboard shortcuts (guarded against blocking modals, interactive/editable controls, modifiers, and IME)
   useEffect(() => {
@@ -354,7 +390,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           break;
         case 'toggle-theater-mode':
           seekAccumulatorRef.current = null;
-          onToggleTheaterMode();
+          handleToggleTheaterMode();
           break;
       }
 
@@ -378,7 +414,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     onAdjustVolume,
     onToggleMute,
     toggleFullscreen,
-    onToggleTheaterMode,
+    handleToggleTheaterMode,
     revealOverlay,
     showHud,
   ]);
@@ -528,7 +564,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {/* Top-Right: Icon-only Theater Mode & Autoplay On/Off */}
             <div className="flex items-center gap-1.5 shrink-0">
               <Tooltip
-                content={isTheaterMode ? 'Exit Theater Mode (Esc / T)' : 'Enter Theater Mode (T)'}
+                content={
+                  isFullscreen
+                    ? 'Enter Theater Mode (T)'
+                    : isTheaterMode
+                    ? 'Exit Theater Mode (Esc / T)'
+                    : 'Enter Theater Mode (T)'
+                }
                 placement="bottom"
                 disabled={!controlsVisible}
               >
@@ -537,12 +579,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   data-testid="theater-mode-button"
                   onClick={(e) => {
                     blurButtonAfterPointerClick(e);
-                    onToggleTheaterMode();
+                    handleToggleTheaterMode();
                   }}
-                  aria-label={isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
-                  aria-pressed={isTheaterMode}
+                  aria-label={!isFullscreen && isTheaterMode ? 'Exit Theater Mode' : 'Enter Theater Mode'}
+                  aria-pressed={!isFullscreen && isTheaterMode}
                   className={`p-2 rounded-lg bg-transparent border-0 shadow-none transition-colors cursor-pointer drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                    isTheaterMode
+                    !isFullscreen && isTheaterMode
                       ? 'text-indigo-500 hover:text-indigo-400'
                       : 'text-white/90 hover:text-white'
                   }`}
@@ -676,7 +718,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         currentVolume={volume}
         isMuted={muted}
         isFullscreen={isFullscreen}
-        isTheaterMode={isTheaterMode}
+        isTheaterMode={!isFullscreen && isTheaterMode}
         isPlayable={Boolean(currentVideo && videoSrc && !playerError)}
         onClose={closeContextMenu}
         onSeekBackwardFine={() => handleRelativeSeek(-controlSettings.seek.fineSeconds)}
@@ -733,7 +775,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         }}
         onToggleFullscreen={toggleFullscreen}
-        onToggleTheaterMode={onToggleTheaterMode}
+        onToggleTheaterMode={handleToggleTheaterMode}
       />
     </div>
   );

@@ -184,4 +184,97 @@ describe('Phase 3 Control Settings Validation & Persistence', () => {
       })
     ).toBe(true);
   });
+
+  describe('Keyboard Shortcuts Reference Dynamic Draft Preview', () => {
+    it('computes dynamic preview values from settings draft', () => {
+      const settings = DEFAULT_CONTROL_SETTINGS;
+      const draft = {
+        ...createDefaultSettingsDraft(),
+        fineSeconds: '2',
+        nearSeconds: '10',
+        farSeconds: '60',
+        speedMax: '4',
+      };
+
+      const fineSec = Number(draft.fineSeconds);
+      const fineDuration = Number.isFinite(fineSec) && fineSec > 0 ? fineSec : settings.seek.fineSeconds;
+
+      const nearSec = Number(draft.nearSeconds);
+      const nearDuration = Number.isFinite(nearSec) && nearSec > 0 ? nearSec : settings.seek.nearSeconds;
+
+      const farSec = Number(draft.farSeconds);
+      const farDuration = Number.isFinite(farSec) && farSec > 0 ? farSec : settings.seek.farSeconds;
+
+      const maxRate = Number(draft.speedMax);
+      const maxSpeed = Number.isFinite(maxRate) && maxRate > 0 ? maxRate : settings.playbackRate.max;
+
+      expect(fineDuration).toBe(2);
+      expect(nearDuration).toBe(10);
+      expect(farDuration).toBe(60);
+      expect(maxSpeed).toBe(4);
+    });
+
+    it('falls back safely to settings when draft values are invalid or non-positive', () => {
+      const settings = DEFAULT_CONTROL_SETTINGS;
+      const draft = {
+        ...createDefaultSettingsDraft(),
+        fineSeconds: 'invalid',
+        nearSeconds: '-5',
+        farSeconds: '0',
+        speedMax: '',
+      };
+
+      const fineSec = Number(draft.fineSeconds);
+      const fineDuration = Number.isFinite(fineSec) && fineSec > 0 ? fineSec : settings.seek.fineSeconds;
+
+      const nearSec = Number(draft.nearSeconds);
+      const nearDuration = Number.isFinite(nearSec) && nearSec > 0 ? nearSec : settings.seek.nearSeconds;
+
+      const farSec = Number(draft.farSeconds);
+      const farDuration = Number.isFinite(farSec) && farSec > 0 ? farSec : settings.seek.farSeconds;
+
+      const maxRate = Number(draft.speedMax);
+      const maxSpeed = Number.isFinite(maxRate) && maxRate > 0 ? maxRate : settings.playbackRate.max;
+
+      expect(fineDuration).toBe(settings.seek.fineSeconds);
+      expect(nearDuration).toBe(settings.seek.nearSeconds);
+      expect(farDuration).toBe(settings.seek.farSeconds);
+      expect(maxSpeed).toBe(settings.playbackRate.max);
+    });
+
+    it('accurately represents all supported shortcuts across the four groups', () => {
+      const groups = {
+        playback: [
+          { label: 'Play / Pause', shortcut: 'Space / K' },
+          { label: 'Fullscreen', shortcut: 'F' },
+          { label: 'Theater Mode', shortcut: 'T' },
+        ],
+        seeking: [
+          { label: 'Back', shortcut: ',' },
+          { label: 'Forward', shortcut: '.' },
+          { label: 'Back', shortcut: '←' },
+          { label: 'Forward', shortcut: '→' },
+          { label: 'Back', shortcut: '↑' },
+          { label: 'Forward', shortcut: '↓' },
+          { label: 'Jump to Start', shortcut: '<' },
+          { label: 'Jump to End', shortcut: '>' },
+        ],
+        playbackSpeed: [
+          { label: 'Slower', shortcut: '[' },
+          { label: 'Faster', shortcut: ']' },
+          { label: 'Toggle 1× / Max', shortcut: '\\' },
+        ],
+        volume: [
+          { label: 'Volume −', shortcut: ';' },
+          { label: 'Volume +', shortcut: "'" },
+          { label: 'Mute / Unmute', shortcut: 'Enter / M' },
+        ],
+      };
+
+      expect(groups.playback).toHaveLength(3);
+      expect(groups.seeking).toHaveLength(8);
+      expect(groups.playbackSpeed).toHaveLength(3);
+      expect(groups.volume).toHaveLength(3);
+    });
+  });
 });

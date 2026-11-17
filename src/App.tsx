@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVideoLibrary } from './hooks/useVideoLibrary';
 import { usePlayback } from './hooks/usePlayback';
 import { useTheme } from './hooks/useTheme';
@@ -121,15 +121,26 @@ export function App() {
   const hasVideos = Boolean(library && library.flatPlaylist.length > 0);
   const isTheaterActive = isTheaterMode && hasVideos;
 
-  const toggleTheaterMode = () => {
-    setIsTheaterMode((prev) => !prev);
-  };
+  const toggleTheaterMode = useCallback((forceState?: boolean) => {
+    setIsTheaterMode((prev) => (typeof forceState === 'boolean' ? forceState : !prev));
+  }, []);
 
   useEffect(() => {
     if (isTheaterMode && !hasVideos) {
       setIsTheaterMode(false);
     }
   }, [isTheaterMode, hasVideos]);
+
+  // Ensure Theater Mode is disabled whenever native fullscreen is entered
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        setIsTheaterMode(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (!isTheaterActive) return;

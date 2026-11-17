@@ -30,6 +30,7 @@ import {
   SubmenuPosition,
 } from '../utils/contextMenuPosition';
 import { formatPlaybackRate, formatVolumePercent } from '../utils/feedbackHud';
+import { getDisplayModeMenuLabels } from '../utils/displayMode';
 
 export type SubmenuType = 'jump' | 'speed' | 'volume' | 'display' | null;
 
@@ -324,6 +325,8 @@ export const VideoContextMenu: React.FC<VideoContextMenuProps> = ({
     },
   ];
 
+  const { fullscreenLabel, theaterLabel } = getDisplayModeMenuLabels(isFullscreen, isTheaterMode);
+
   // Submenu items map
   const submenus = {
     jump: [
@@ -392,14 +395,14 @@ export const VideoContextMenu: React.FC<VideoContextMenuProps> = ({
       {
         id: 'display-fullscreen',
         icon: <Maximize className="w-4 h-4 text-indigo-300 dark:text-indigo-300 light:text-indigo-600 shrink-0" />,
-        label: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+        label: fullscreenLabel,
         shortcut: 'F',
         action: () => handleAction(onToggleFullscreen),
       },
       {
         id: 'display-theater',
         icon: <Tv className="w-4 h-4 text-indigo-300 dark:text-indigo-300 light:text-indigo-600 shrink-0" />,
-        label: isTheaterMode ? 'Exit Theater Mode' : 'Theater Mode',
+        label: theaterLabel,
         shortcut: 'T',
         action: () => handleAction(onToggleTheaterMode),
       },
