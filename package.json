@@ -18,6 +18,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "lucide-react": "^1.66.0",
+    "mpegts.js": "^1.8.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
