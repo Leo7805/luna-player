@@ -409,7 +409,7 @@ export function App() {
             isTheaterActive ? 'hidden' : ''
           }`}
         >
-          © 2026 Jin Liu · MIT License
+          © 2026 Leo · MIT License
         </footer>
         <SettingsModal
           isOpen={isSettingsOpen}
