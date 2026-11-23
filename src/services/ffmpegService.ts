@@ -1,3 +1,4 @@
+import { loadFfmpegRuntime, finishFfmpegRuntimeLoad, type FfmpegRuntime } from './ffmpegRuntime';
 import type { FFmpeg } from '@ffmpeg/ffmpeg';
 import {
   AudioOutputFormat,
@@ -85,103 +86,80 @@ function isFileAccessDomExceptionName(name: string): boolean {
  * Singleton-like manager for the lazy-loaded FFmpeg.wasm single-threaded worker.
  * Isolated from playback logic so FFmpeg is only loaded when audio extraction is requested.
  */
-class BrowserFfmpegService implements AudioEncoderAdapter {
+export class BrowserFfmpegService implements AudioEncoderAdapter {
   private ffmpeg: FFmpeg | null = null;
   private loadingPromise: Promise<void> | null = null;
+  private loadingController: AbortController | null = null;
   private jobCounter = 0;
 
+  constructor(private readonly initializationTimeoutMs = 60_000) {}
+
   async initialize(signal?: AbortSignal): Promise<void> {
-    if (signal?.aborted) {
-      throw new DOMException('Operation was aborted', 'AbortError');
+    signal?.throwIfAborted();
+    if (this.ffmpeg?.loaded) return;
+    if (this.loadingController?.signal.aborted) {
+      this.loadingController = null;
+      this.loadingPromise = null;
     }
-
-    if (this.ffmpeg && this.ffmpeg.loaded) {
-      return;
+    if (!this.loadingPromise) {
+      const controller = new AbortController();
+      this.loadingController = controller;
+      const attempt = this.loadInternal(controller);
+      this.loadingPromise = attempt;
+      void attempt.finally(() => {
+        if (this.loadingPromise === attempt) {
+          this.loadingPromise = null;
+          this.loadingController = null;
+        }
+      }).catch(() => {});
     }
-
-    if (this.loadingPromise) {
-      return this.loadingPromise;
-    }
-
-    this.loadingPromise = this.loadInternal(signal);
+    const controller = this.loadingController!;
+    const cancel = () => controller.abort(new DOMException('Operation was aborted', 'AbortError'));
+    signal?.addEventListener('abort', cancel, { once: true });
     try {
       await this.loadingPromise;
     } finally {
-      this.loadingPromise = null;
+      signal?.removeEventListener('abort', cancel);
     }
   }
 
-  private async loadInternal(signal?: AbortSignal): Promise<void> {
-    let coreBlobUrl: string | null = null;
+  private async loadInternal(controller: AbortController): Promise<void> {
+    const { signal } = controller;
+    let instance: FFmpeg | undefined;
+    let runtime: FfmpegRuntime | undefined;
+    const timer = setTimeout(() => controller.abort(new FfmpegInitializationError(
+      `FFmpeg initialization timed out after ${this.initializationTimeoutMs / 1000} seconds. Please try again.`
+    )), this.initializationTimeoutMs);
+    let rejectAbort: (reason: unknown) => void = () => {};
+    const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+    const onAbort = () => {
+      instance?.terminate();
+      if (runtime) finishFfmpegRuntimeLoad(runtime, false);
+      rejectAbort(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
     try {
-      const [{ FFmpeg: FFmpegClass }, { toBlobURL }, coreUrlMod, wasmUrlMod] = await Promise.all([
-        import('@ffmpeg/ffmpeg'),
-        import('@ffmpeg/util'),
-        import('@ffmpeg/core?url'),
-        import('@ffmpeg/core/wasm?url'),
+      await Promise.race([
+        (async () => {
+          runtime = await loadFfmpegRuntime(signal);
+          const { FFmpegClass, ...config } = runtime;
+          signal.throwIfAborted();
+          instance = new FFmpegClass();
+          await instance.load(config, { signal });
+          signal.throwIfAborted();
+          finishFfmpegRuntimeLoad(runtime, true);
+          this.ffmpeg = instance;
+        })(),
+        aborted,
       ]);
-
-      if (signal?.aborted) {
-        throw new DOMException('Operation was aborted', 'AbortError');
-      }
-
-      const baseHref = typeof window !== 'undefined' ? window.location.href : 'http://localhost/';
-      const resolvedCoreUrl = new URL(coreUrlMod.default, baseHref).href;
-      const resolvedWasmUrl = new URL(wasmUrlMod.default, baseHref).href;
-
-      const instance = new FFmpegClass();
-      try {
-        await instance.load(
-          {
-            coreURL: resolvedCoreUrl,
-            wasmURL: resolvedWasmUrl,
-          },
-          signal ? { signal } : undefined
-        );
-      } catch (directLoadErr) {
-        if (
-          signal?.aborted ||
-          (directLoadErr instanceof DOMException && directLoadErr.name === 'AbortError')
-        ) {
-          instance.terminate();
-          throw new DOMException('Operation was aborted', 'AbortError');
-        }
-        // Fallback to Blob URL if direct module import of coreURL was rejected by worker
-        instance.terminate();
-        const fallbackInstance = new FFmpegClass();
-        coreBlobUrl = await toBlobURL(resolvedCoreUrl, 'text/javascript');
-        if (signal?.aborted) {
-          fallbackInstance.terminate();
-          throw new DOMException('Operation was aborted', 'AbortError');
-        }
-        await fallbackInstance.load(
-          {
-            coreURL: coreBlobUrl,
-            wasmURL: resolvedWasmUrl,
-          },
-          signal ? { signal } : undefined
-        );
-        this.ffmpeg = fallbackInstance;
-        return;
-      }
-
-      this.ffmpeg = instance;
-    } catch (err) {
-      this.terminate();
-      if (coreBlobUrl && typeof URL.revokeObjectURL === 'function') {
-        try {
-          URL.revokeObjectURL(coreBlobUrl);
-        } catch {
-          // Ignore revoke errors
-        }
-      }
-      if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
-        throw new DOMException('Operation was aborted', 'AbortError');
-      }
-      const detail = formatWorkerError(err);
-      throw new FfmpegInitializationError(
-        `Failed to initialize FFmpeg WebAssembly: ${detail}`
-      );
+    } catch (error) {
+      instance?.terminate();
+      if (runtime) finishFfmpegRuntimeLoad(runtime, false);
+      if (signal.aborted) throw signal.reason;
+      throw new FfmpegInitializationError(`Failed to initialize FFmpeg WebAssembly: ${formatWorkerError(error)}`);
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
     }
   }
 
@@ -264,14 +242,23 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
 
     const onLog = ({ message }: { message: string }) => {
       logs.push(message);
+      if (logs.length > 200) logs.shift();
     };
 
+    const cancel = () => {
+      ffmpeg.terminate();
+      if (this.ffmpeg === ffmpeg) this.ffmpeg = null;
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
     ffmpeg.on('log', onLog);
+    console.debug('[Audio extraction]', { jobId, stage: 'preparing_input' });
 
     try {
+      signal?.throwIfAborted();
       if (options.preferWorkerFs) {
         try {
           const { FFFSType } = await import('@ffmpeg/ffmpeg');
+          signal?.throwIfAborted();
           await ffmpeg.createDir(mountDir);
           const mounted = await ffmpeg.mount(
             FFFSType.WORKERFS,
@@ -286,8 +273,10 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         }
       }
 
+      signal?.throwIfAborted();
       if (!usedWorkerFs) {
         inputVirtualPath = `/input_${jobId}.${safeSrcExt}`;
+        console.debug('[Audio extraction]', { jobId, stage: 'reading_source' });
         let buffer: ArrayBuffer;
         try {
           buffer = await file.arrayBuffer();
@@ -309,7 +298,9 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         }
       }
 
+      signal?.throwIfAborted();
       activeStage = 'running_ffmpeg';
+      console.debug('[Audio extraction]', { jobId, stage: 'encoding' });
       const args = buildFfmpegArgs(inputVirtualPath, outputVirtualPath, format, options.channels);
       const exitCode = await ffmpeg.exec(args, -1, signal ? { signal } : undefined);
 
@@ -322,6 +313,7 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         });
       }
 
+      console.debug('[Audio extraction]', { jobId, stage: 'reading_encoded_output' });
       const rawOutput = await ffmpeg.readFile(
         outputVirtualPath,
         'binary',
@@ -351,12 +343,12 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
       };
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
-        this.terminate();
+        cancel();
         throw new DOMException('Operation was aborted', 'AbortError');
       }
 
       if (isFatalWasmCrash(err)) {
-        this.terminate();
+        cancel();
       }
 
       if (err instanceof ExtractionStageError) {
@@ -384,38 +376,42 @@ class BrowserFfmpegService implements AudioEncoderAdapter {
         overrideMessage: classified,
       });
     } finally {
+      console.debug('[Audio extraction]', { jobId, stage: 'cleaning_up' });
       ffmpeg.off('log', onLog);
 
-      if (this.ffmpeg && this.ffmpeg.loaded) {
+      if (this.ffmpeg === ffmpeg && ffmpeg.loaded) {
         if (usedWorkerFs) {
           try {
-            await this.ffmpeg.unmount(mountDir);
+            await ffmpeg.unmount(mountDir);
           } catch {
             // Ignore unmount errors
           }
           try {
-            await this.ffmpeg.deleteDir(mountDir);
+            await ffmpeg.deleteDir(mountDir);
           } catch {
             // Ignore deleteDir errors
           }
         }
         if (wroteMemFsInput) {
           try {
-            await this.ffmpeg.deleteFile(inputVirtualPath);
+            await ffmpeg.deleteFile(inputVirtualPath);
           } catch {
             // Ignore cleanup errors
           }
         }
         try {
-          await this.ffmpeg.deleteFile(outputVirtualPath);
+          await ffmpeg.deleteFile(outputVirtualPath);
         } catch {
           // Output file may not exist if encoding failed
         }
       }
+      signal?.removeEventListener('abort', cancel);
     }
   }
 
   terminate(): void {
+    this.loadingController?.abort(new DOMException('Operation was aborted', 'AbortError'));
+    this.loadingController = null;
     this.loadingPromise = null;
     if (this.ffmpeg) {
       try {

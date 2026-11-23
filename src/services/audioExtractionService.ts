@@ -52,7 +52,7 @@ export interface BatchExtractionProgress {
 export interface OutputDirectoryWriter {
   verifyWritePermission(): Promise<boolean>;
   fileExists(directoryParts: string[], fileName: string): Promise<boolean>;
-  writeFile(directoryParts: string[], fileName: string, data: Uint8Array): Promise<void>;
+  writeFile(directoryParts: string[], fileName: string, data: Uint8Array, signal?: AbortSignal): Promise<void>;
 }
 
 /**
@@ -195,7 +195,7 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
     }
   }
 
-  async writeFile(directoryParts: string[], fileName: string, data: Uint8Array): Promise<void> {
+  async writeFile(directoryParts: string[], fileName: string, data: Uint8Array, signal?: AbortSignal): Promise<void> {
     if (!data || data.byteLength === 0) {
       throw new ExtractionStageError(
         'writing_output',
@@ -231,11 +231,16 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
       }
 
       const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      signal?.throwIfAborted();
       const writable = await fileHandle.createWritable();
+      const cancel = () => { void writable.abort().catch(() => {}); };
+      signal?.addEventListener('abort', cancel, { once: true });
       try {
         const bufferToWrite = new Uint8Array(data.byteLength);
         bufferToWrite.set(data);
+        signal?.throwIfAborted();
         await writable.write(bufferToWrite);
+        signal?.throwIfAborted();
         await writable.close();
       } catch (err) {
         try {
@@ -244,6 +249,8 @@ export class BrowserOutputDirectoryWriter implements OutputDirectoryWriter {
           // Ignore abort error
         }
         throw err;
+      } finally {
+        signal?.removeEventListener('abort', cancel);
       }
     } catch (err: unknown) {
       if (err instanceof ExtractionStageError) {
@@ -327,7 +334,7 @@ function buildFailedFileRecord(
  * Preserves folder hierarchy, skips existing files and files > 2 GB,
  * continues on per-file errors, and supports clean cancellation.
  */
-export async function runBatchAudioExtraction({
+async function runBatchAudioExtractionInternal({
   videos,
   format,
   writer,
@@ -495,7 +502,9 @@ export async function runBatchAudioExtraction({
     // Resolve actual File object from handle or fallback File
     let sourceFile: File;
     try {
+      console.debug('[Audio extraction]', { index: i + 1, stage: 'reading_source' });
       sourceFile = await resolveSourceFile(video);
+      signal?.throwIfAborted();
     } catch (err: unknown) {
       progress.failedCount++;
       records.push(
@@ -598,7 +607,10 @@ export async function runBatchAudioExtraction({
       }
 
       activeStage = 'writing_output';
-      await writer.writeFile(item.directoryParts, item.outputFileName, encoded.data);
+      console.debug('[Audio extraction]', { index: i + 1, stage: 'writing_output' });
+      signal?.throwIfAborted();
+      await writer.writeFile(item.directoryParts, item.outputFileName, encoded.data, signal);
+      signal?.throwIfAborted();
 
       progress.completedCount++;
       records.push({
@@ -664,4 +676,43 @@ export async function runBatchAudioExtraction({
   emit();
 
   return { ...progress, records: [...records] };
+}
+
+/** Cancel even when an external drive or an unresponsive worker does not settle. */
+export async function runBatchAudioExtraction(options: RunBatchAudioExtractionOptions): Promise<BatchExtractionProgress> {
+  const { signal } = options;
+  let cancelled = false;
+  let latest: BatchExtractionProgress = {
+    state: 'initializing', totalFiles: options.videos.length, currentIndex: 0,
+    currentFileName: '', currentRelativePath: '', completedCount: 0,
+    skippedCount: 0, failedCount: 0, statusMessage: 'Preparing audio extraction...', records: [],
+  };
+  let finishCancel: (progress: BatchExtractionProgress) => void = () => {};
+  const cancellation = new Promise<BatchExtractionProgress>(resolve => { finishCancel = resolve; });
+  const cancel = () => {
+    cancelled = true;
+    (options.encoder ?? defaultFfmpegService).terminate();
+    latest = { ...latest, state: 'cancelled', statusMessage: 'Extraction cancelled.' };
+    options.onProgress?.(latest);
+    finishCancel(latest);
+  };
+  signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    if (signal?.aborted) { cancel(); return latest; }
+    const work = runBatchAudioExtractionInternal({
+      ...options,
+      // A detached filesystem operation cannot update a restarted batch.
+      onProgress: progress => {
+        if (!cancelled) { latest = progress; options.onProgress?.(progress); }
+      },
+      encoder: {
+        initialize: async s => { s?.throwIfAborted(); await (options.encoder ?? defaultFfmpegService).initialize(s); },
+        extractAudio: async (...args) => { signal?.throwIfAborted(); return (options.encoder ?? defaultFfmpegService).extractAudio(...args); },
+        terminate: () => { if (!cancelled) (options.encoder ?? defaultFfmpegService).terminate(); },
+      },
+    });
+    return await Promise.race([work, cancellation]);
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
 }

@@ -13,6 +13,7 @@ import {
 } from '../src/utils/audioExtractor';
 import {
   BatchExtractionProgress,
+  BrowserOutputDirectoryWriter,
   OutputDirectoryWriter,
   runBatchAudioExtraction,
 } from '../src/services/audioExtractionService';
@@ -616,4 +617,82 @@ describe('FFmpeg.wasm Core Smoke Test (MP3 & WebM encoders on stereo and 5.1 aud
     },
     10000
   );
+});
+
+describe('batch restart reliability', () => {
+  it('skips 20 saved outputs and completes the remaining five on restart', async () => {
+    const videos = Array.from({ length: 25 }, (_, i) => makeVideo(`Folder/Video ${i + 1}.mp4`));
+    const writer = new InMemoryOutputWriter();
+    const controller = new AbortController();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockResolvedValue({ data: new Uint8Array([1]), args: [] }),
+      terminate: vi.fn(),
+    };
+    const first = await runBatchAudioExtraction({
+      videos, writer, encoder, format: 'mp3', signal: controller.signal,
+      onProgress: p => { if (p.completedCount === 20) controller.abort(); },
+    });
+    expect(first.state).toBe('cancelled');
+    const second = await runBatchAudioExtraction({ videos, writer, encoder, format: 'mp3' });
+    expect(second.state).toBe('completed');
+    expect(second.skippedCount).toBe(20);
+    expect(second.completedCount).toBe(5);
+    expect(second.failedCount).toBe(0);
+    expect(writer.writtenFiles.size).toBe(25);
+  });
+
+  it('cancels a hung source lookup and prevents its late result affecting a restarted batch', async () => {
+    const video = makeVideo('video.mp4');
+    const writer = new InMemoryOutputWriter();
+    const controller = new AbortController();
+    let release!: (file: File) => void;
+    let started!: () => void;
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockResolvedValue({ data: new Uint8Array([1]), args: [] }),
+      terminate: vi.fn(),
+    };
+    const first = runBatchAudioExtraction({
+      videos: [video], writer, encoder, format: 'mp3', signal: controller.signal,
+      resolveSourceFile: () => { started(); return new Promise(resolve => { release = resolve; }); },
+    });
+    await ready;
+    controller.abort();
+    expect((await first).state).toBe('cancelled');
+    const second = await runBatchAudioExtraction({ videos: [video], writer, encoder, format: 'mp3' });
+    expect(second.completedCount).toBe(1);
+    const terminationCount = vi.mocked(encoder.terminate).mock.calls.length;
+    release(video.file!);
+    await Promise.resolve(); await Promise.resolve();
+    expect(encoder.extractAudio).toHaveBeenCalledTimes(1);
+    expect(encoder.terminate).toHaveBeenCalledTimes(terminationCount);
+  });
+});
+
+
+it('aborts output writing on cancellation without closing or recording a partial output', async () => {
+  const controller = new AbortController();
+  let startWrite!: () => void;
+  let rejectWrite!: (error: unknown) => void;
+  const started = new Promise<void>(resolve => { startWrite = resolve; });
+  const writable = {
+    write: vi.fn(() => { startWrite(); return new Promise<void>((_, reject) => { rejectWrite = reject; }); }),
+    close: vi.fn(),
+    abort: vi.fn(async () => { rejectWrite(new DOMException('Cancelled', 'AbortError')); }),
+  };
+  const root = {
+    getFileHandle: vi.fn(async (_name: string, options: { create: boolean }) => {
+      if (!options.create) throw new DOMException('Missing', 'NotFoundError');
+      return { createWritable: async () => writable };
+    }),
+  } as unknown as FileSystemDirectoryHandle;
+  const writer = new BrowserOutputDirectoryWriter(root);
+  const result = expect(writer.writeFile([], 'output.mp3', new Uint8Array([1]), controller.signal)).rejects.toThrow();
+  await started;
+  controller.abort();
+  await result;
+  expect(writable.abort).toHaveBeenCalled();
+  expect(writable.close).not.toHaveBeenCalled();
 });
