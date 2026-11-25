@@ -31,8 +31,19 @@ export function loadFfmpegRuntime(signal: AbortSignal): Promise<FfmpegRuntime> {
         urls.push(blobURL);
         return blobURL;
       };
+      // In Vite dev mode, `?worker&url` serves an unbundled module (`?worker_file&type=module`)
+      // with root-relative imports (`/@vite/client`, `/node_modules/...`) that cannot resolve
+      // from a `blob:` URL. Production builds bundle the worker into a self-contained asset
+      // that is safely retained as a `blob:` URL for offline worker recreation.
+      const isDevUnbundledWorker =
+        Boolean(import.meta.env?.DEV) &&
+        typeof worker.default === 'string' &&
+        worker.default.includes('worker_file');
+
       // Sequential so a failed fetch cannot strand a later-created Blob URL.
-      const classWorkerURL = await retain(worker.default, 'text/javascript');
+      const classWorkerURL = isDevUnbundledWorker
+        ? worker.default
+        : await retain(worker.default, 'text/javascript');
       const coreURL = await retain(core.default, 'text/javascript');
       const wasmURL = await retain(wasm.default, 'application/wasm');
       signal.throwIfAborted();
@@ -62,7 +73,9 @@ export function finishFfmpegRuntimeLoad(value: FfmpegRuntime, success: boolean):
   if (runtime !== value) return;
   if (success) validated = true;
   else if (!validated) {
-    [value.classWorkerURL, value.coreURL, value.wasmURL].forEach(url => URL.revokeObjectURL(url));
+    [value.classWorkerURL, value.coreURL, value.wasmURL]
+      .filter(url => url.startsWith('blob:'))
+      .forEach(url => URL.revokeObjectURL(url));
     runtime = undefined;
   }
 }

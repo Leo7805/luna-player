@@ -22,6 +22,8 @@ export type BatchProcessingState =
   | 'cancelled'
   | 'error';
 
+export type BatchProcessingStage = 'preparing' | 'reading' | 'encoding' | 'saving';
+
 export interface FileExtractionRecord {
   relativePath: string;
   outputRelativePath: string;
@@ -41,6 +43,7 @@ export interface BatchExtractionProgress {
   currentIndex: number; // 1-based position while processing (e.g., 24 for "24 / 100")
   currentFileName: string;
   currentRelativePath: string;
+  currentStage?: BatchProcessingStage;
   completedCount: number;
   skippedCount: number;
   failedCount: number;
@@ -355,6 +358,7 @@ async function runBatchAudioExtractionInternal({
     currentIndex: 0,
     currentFileName: '',
     currentRelativePath: '',
+    currentStage: 'preparing',
     completedCount: 0,
     skippedCount: 0,
     failedCount: 0,
@@ -420,6 +424,7 @@ async function runBatchAudioExtractionInternal({
     progress.currentIndex = i + 1;
     progress.currentFileName = video.name;
     progress.currentRelativePath = video.relativePath;
+    progress.currentStage = 'preparing';
     progress.statusMessage = `Processing ${i + 1} / ${totalFiles}: ${video.name}`;
     emit();
 
@@ -504,6 +509,8 @@ async function runBatchAudioExtractionInternal({
     // Resolve actual File object from handle or fallback File
     let sourceFile: File;
     try {
+      progress.currentStage = 'reading';
+      emit();
       console.debug('[Audio extraction]', { index: i + 1, stage: 'reading_source' });
       sourceFile = await resolveSourceFile(video);
       signal?.throwIfAborted();
@@ -549,6 +556,7 @@ async function runBatchAudioExtractionInternal({
 
     // Initialize FFmpeg engine lazily before the first actual conversion
     if (!encoderInitialized) {
+      progress.currentStage = 'preparing';
       progress.statusMessage = 'Loading local FFmpeg audio engine...';
       emit();
       try {
@@ -575,6 +583,7 @@ async function runBatchAudioExtractionInternal({
       }
     }
 
+    progress.currentStage = 'encoding';
     progress.statusMessage = `Extracting audio (${i + 1} / ${totalFiles}): ${video.name}`;
     emit();
 
@@ -609,6 +618,8 @@ async function runBatchAudioExtractionInternal({
       }
 
       activeStage = 'writing_output';
+      progress.currentStage = 'saving';
+      emit();
       console.debug('[Audio extraction]', { index: i + 1, stage: 'writing_output' });
       signal?.throwIfAborted();
       await writer.writeFile(item.directoryParts, item.outputFileName, encoded.data, signal);
@@ -665,6 +676,7 @@ async function runBatchAudioExtractionInternal({
   if (progress.completedCount === 0 && progress.failedCount > 0) {
     const firstFailedRecord = records.find((r) => r.outcome === 'failed' && r.reason);
     progress.state = 'error';
+    progress.currentStage = undefined;
     progress.statusMessage = `Extraction failed: 0 extracted, ${progress.skippedCount} skipped, ${progress.failedCount} failed.`;
     progress.errorMessage = firstFailedRecord?.reason
       ? `All ${progress.failedCount} video(s) failed to convert. Last error: ${firstFailedRecord.reason}`
@@ -674,6 +686,7 @@ async function runBatchAudioExtractionInternal({
   }
 
   progress.state = 'completed';
+  progress.currentStage = undefined;
   progress.statusMessage = `Finished! ${progress.completedCount} extracted, ${progress.skippedCount} skipped, ${progress.failedCount} failed.`;
   emit();
 

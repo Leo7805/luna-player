@@ -42,3 +42,21 @@ it('reports unavailable offline resources and can retry after reconnecting', asy
   fetch.mockImplementation(async () => new Response('runtime'));
   await expect(loadFfmpegRuntime(new AbortController().signal)).resolves.toHaveProperty('wasmURL');
 });
+
+it('uses direct worker URL for Vite dev unbundled workers while retaining core and wasm', async () => {
+  vi.doMock('@ffmpeg/ffmpeg/worker?worker&url', () => ({
+    default: '/node_modules/@ffmpeg/ffmpeg/dist/esm/worker.js?worker_file&type=module',
+  }));
+  const fetch = vi.fn(async () => new Response('runtime'));
+  vi.stubGlobal('fetch', fetch);
+  const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retained');
+  const { loadFfmpegRuntime } = await import('../src/services/ffmpegRuntime');
+  const runtime = await loadFfmpegRuntime(new AbortController().signal);
+  expect(runtime.classWorkerURL).toBe(
+    '/node_modules/@ffmpeg/ffmpeg/dist/esm/worker.js?worker_file&type=module'
+  );
+  expect(runtime.coreURL).toBe('blob:retained');
+  expect(runtime.wasmURL).toBe('blob:retained');
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(create).toHaveBeenCalledTimes(2);
+});

@@ -15,7 +15,6 @@ import {
   setAllFolderExpansion,
   toggleFolderExpansion,
 } from './PlaylistFolder';
-import { ExtractAudioDialog } from './ExtractAudioDialog';
 import { Tooltip } from './Tooltip';
 import { blurButtonAfterPointerClick } from '../utils/shortcuts';
 
@@ -24,6 +23,8 @@ interface PlaylistProps {
   currentVideo: VideoItem | null;
   onSelectVideo: (video: VideoItem) => void;
   onCollapseSidebar?: () => void;
+  onOpenExtractAudio?: () => void;
+  isExtractionRunning?: boolean;
 }
 
 export function Playlist({
@@ -31,6 +32,8 @@ export function Playlist({
   currentVideo,
   onSelectVideo,
   onCollapseSidebar,
+  onOpenExtractAudio,
+  isExtractionRunning = false,
 }: PlaylistProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -43,11 +46,10 @@ export function Playlist({
   const [searchExpansionBlockedQuery, setSearchExpansionBlockedQuery] = useState<string | null>(
     null
   );
-  const [isExtractDialogOpen, setIsExtractDialogOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalVideos = library.flatPlaylist.length;
-  const hasExtractableVideos = totalVideos > 0;
+  const canOpenExtractAudio = totalVideos > 0 || isExtractionRunning;
   const isFiltered = searchQuery.trim().length > 0;
   const hasExpandableFolders = library.tree.subfolders.length > 0;
   const isAllExpanded =
@@ -145,7 +147,9 @@ export function Playlist({
 
             <Tooltip
               content={
-                hasExtractableVideos
+                isExtractionRunning
+                  ? 'Show Audio Extraction Progress'
+                  : canOpenExtractAudio
                   ? 'Extract Audio'
                   : 'No videos loaded to extract audio'
               }
@@ -153,19 +157,32 @@ export function Playlist({
             >
               <button
                 type="button"
-                disabled={!hasExtractableVideos}
-                onClick={() => {
-                  if (hasExtractableVideos) setIsExtractDialogOpen(true);
+                disabled={!canOpenExtractAudio}
+                onClick={(e) => {
+                  blurButtonAfterPointerClick(e);
+                  if (canOpenExtractAudio) onOpenExtractAudio?.();
                 }}
-                className="inline-flex items-center justify-center p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 hover:bg-slate-200/60 dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-600 dark:disabled:hover:text-slate-300 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                className={`relative inline-flex items-center justify-center p-1.5 rounded-lg transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-600 dark:disabled:hover:text-slate-300 ${
+                  isExtractionRunning
+                    ? 'text-sky-600 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-sky-700 dark:hover:text-sky-300 hover:bg-slate-200/60 dark:hover:bg-white/10'
+                }`}
                 aria-label={
-                  hasExtractableVideos
+                  isExtractionRunning
+                    ? 'Show Audio Extraction Progress'
+                    : canOpenExtractAudio
                     ? 'Extract Audio'
                     : 'Extract Audio (no videos loaded)'
                 }
                 data-testid="extract-audio-button"
               >
                 <AudioLines className="h-4 w-4 shrink-0" />
+                {isExtractionRunning && (
+                  <span
+                    className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sky-500"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             </Tooltip>
 
@@ -273,14 +290,6 @@ export function Playlist({
           />
         )}
       </div>
-
-      {isExtractDialogOpen && (
-        <ExtractAudioDialog
-          isOpen={isExtractDialogOpen}
-          onClose={() => setIsExtractDialogOpen(false)}
-          library={library}
-        />
-      )}
     </div>
   );
 }

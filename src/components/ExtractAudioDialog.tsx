@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
+  Minus,
   Loader2,
   ShieldCheck,
   Ban,
@@ -14,27 +15,35 @@ import {
   ChevronRight,
   Info,
 } from 'lucide-react';
-import { VideoLibrary } from '../types/video';
 import {
   AudioOutputFormat,
   AUDIO_FORMAT_CONFIGS,
   buildOutputFileName,
+  computeBatchProgressMetrics,
   validateRelativePath,
 } from '../utils/audioExtractor';
 import {
   BatchExtractionProgress,
-  BrowserOutputDirectoryWriter,
   FileExtractionRecord,
-  checkIsSameAsSourceDirectory,
-  isDirectoryWriteSupported,
-  promptOutputDirectory,
-  runBatchAudioExtraction,
 } from '../services/audioExtractionService';
+import { ExtractionSourceSnapshot } from '../hooks/useAudioExtraction';
 
 interface ExtractAudioDialogProps {
   isOpen: boolean;
+  sourceSnapshot: ExtractionSourceSnapshot;
+  format: AudioOutputFormat;
+  outputDirHandle: FileSystemDirectoryHandle | null;
+  isSameFolderWarning: boolean;
+  pickerError: string | null;
+  progress: BatchExtractionProgress | null;
+  isRunning: boolean;
+  fsaWriteSupported: boolean;
+  onFormatChange: (format: AudioOutputFormat) => void;
+  onChooseOutputFolder: () => Promise<FileSystemDirectoryHandle | null>;
+  onStartExtraction: () => Promise<void>;
+  onCancelExtraction: () => void;
+  onMinimize: () => void;
   onClose: () => void;
-  library: VideoLibrary;
 }
 
 const MAX_VISIBLE_FAILED_RECORDS = 20;
@@ -59,47 +68,57 @@ function formatFailedRecordForClipboard(rec: FileExtractionRecord): string {
   return lines.join('\n');
 }
 
-export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDialogProps) {
-  const [format, setFormat] = useState<AudioOutputFormat>('mp3');
-  const [outputDirHandle, setOutputDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [isSameFolderWarning, setIsSameFolderWarning] = useState(false);
-  const [pickerError, setPickerError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<BatchExtractionProgress | null>(null);
+export function ExtractAudioDialog({
+  isOpen,
+  sourceSnapshot,
+  format,
+  outputDirHandle,
+  isSameFolderWarning,
+  pickerError,
+  progress,
+  isRunning,
+  fsaWriteSupported,
+  onFormatChange,
+  onChooseOutputFolder,
+  onStartExtraction,
+  onCancelExtraction,
+  onMinimize,
+  onClose,
+}: ExtractAudioDialogProps) {
   const [copiedRecordKey, setCopiedRecordKey] = useState<string | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
   const dialogPanelRef = useRef<HTMLDivElement | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fsaWriteSupported = isDirectoryWriteSupported();
-  const isFilesMode = library.sourceType === 'files';
-  const totalVideos = library.flatPlaylist.length;
-  const isRunning =
-    progress?.state === 'initializing' || progress?.state === 'processing';
+  const isFilesMode = sourceSnapshot.sourceType === 'files';
+  const totalVideos = sourceSnapshot.videos.length;
+  const canMinimize = isRunning || Boolean(progress && progress.state !== 'idle');
 
-  // Clean up any active extraction if the dialog unmounts
+  // Clean up clipboard feedback timer only (never abort extraction on unmount)
   useEffect(() => {
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
       if (copyResetTimerRef.current) {
         clearTimeout(copyResetTimerRef.current);
       }
     };
   }, []);
 
-  // Keyboard Escape handling & background scroll lock while dialog is open
+  // Keyboard Escape handling, focus placement & background scroll lock while expanded dialog is open
   useEffect(() => {
     if (!isOpen) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    dialogPanelRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isRunning) {
+      if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (isRunning) {
+          onMinimize();
+        } else {
+          onClose();
+        }
       }
     };
 
@@ -108,14 +127,14 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, isRunning, onClose]);
+  }, [isOpen, isRunning, onMinimize, onClose]);
 
-  // Build dynamic example output path from the loaded library (or fallback example)
+  // Build dynamic example output path from the active snapshot (or fallback example)
   const exampleOutputPath = useMemo(() => {
     const ext = AUDIO_FORMAT_CONFIGS[format].extension;
-    if (library.flatPlaylist.length > 0) {
+    if (sourceSnapshot.videos.length > 0) {
       if (isFilesMode) {
-        const firstVideo = library.flatPlaylist[0];
+        const firstVideo = sourceSnapshot.videos[0];
         const validated = validateRelativePath(firstVideo.relativePath);
         if (validated.valid) {
           return buildOutputFileName(validated.fileName, format);
@@ -124,8 +143,8 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       }
       // Prefer a nested video if one exists so the user sees folder preservation in the preview
       const nestedSample =
-        library.flatPlaylist.find((v) => v.relativePath.includes('/')) ||
-        library.flatPlaylist[0];
+        sourceSnapshot.videos.find((v) => v.relativePath.includes('/')) ||
+        sourceSnapshot.videos[0];
       const validated = validateRelativePath(nestedSample.relativePath);
       if (validated.valid) {
         const outName = buildOutputFileName(validated.fileName, format);
@@ -135,68 +154,9 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       }
     }
     return isFilesMode ? `Video 01.${ext}` : `English / Lesson 01.${ext}`;
-  }, [library.flatPlaylist, format, isFilesMode]);
+  }, [sourceSnapshot.videos, format, isFilesMode]);
 
   if (!isOpen) return null;
-
-  const handleChooseOutputFolder = async (): Promise<FileSystemDirectoryHandle | null> => {
-    setPickerError(null);
-    try {
-      const handle = await promptOutputDirectory();
-      if (!handle) {
-        // User cancelled the directory picker
-        return null;
-      }
-      const sameAsSource = await checkIsSameAsSourceDirectory(library, handle);
-      setIsSameFolderWarning(sameAsSource);
-      setOutputDirHandle(handle);
-      return handle;
-    } catch (err: unknown) {
-      setPickerError(
-        err instanceof Error ? err.message : 'Unable to select output folder.'
-      );
-      return null;
-    }
-  };
-
-  const handleStartExtraction = async () => {
-    if (isRunning || totalVideos === 0 || !fsaWriteSupported) return;
-
-    setPickerError(null);
-
-    let targetDirHandle = outputDirHandle;
-    if (!targetDirHandle) {
-      targetDirHandle = await handleChooseOutputFolder();
-      if (!targetDirHandle) {
-        // User cancelled directory selection or permission was denied
-        return;
-      }
-    }
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    const writer = new BrowserOutputDirectoryWriter(targetDirHandle);
-
-    await runBatchAudioExtraction({
-      videos: library.flatPlaylist,
-      format,
-      writer,
-      preserveFolderStructure: !isFilesMode,
-      signal: abortController.signal,
-      onProgress: (updated) => {
-        setProgress(updated);
-      },
-    });
-  };
-
-  const handleCancelOrClose = () => {
-    if (isRunning && abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      return;
-    }
-    onClose();
-  };
 
   const handleCopyFailedRecord = async (rec: FileExtractionRecord, recordKey: string) => {
     const text = formatFailedRecordForClipboard(rec);
@@ -225,13 +185,9 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
     }
   };
 
-  const processedCount = progress
-    ? progress.completedCount + progress.skippedCount + progress.failedCount
+  const progressPercent = progress
+    ? computeBatchProgressMetrics(progress).progressPercent
     : 0;
-  const progressPercent =
-    progress && progress.totalFiles > 0
-      ? Math.min(100, Math.round((processedCount / progress.totalFiles) * 100))
-      : 0;
 
   const failedRecords = progress
     ? progress.records.filter((r) => r.outcome === 'failed')
@@ -255,7 +211,8 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
     >
       <div
         ref={dialogPanelRef}
-        className="flex flex-col w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] min-h-0 rounded-2xl glass-panel shadow-2xl border border-slate-300/80 dark:border-white/15 overflow-hidden text-slate-900 dark:text-slate-100"
+        tabIndex={-1}
+        className="flex flex-col w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] min-h-0 rounded-2xl glass-panel shadow-2xl border border-slate-300/80 dark:border-white/15 overflow-hidden text-slate-900 dark:text-slate-100 focus:outline-none"
         style={{ maxHeight: 'min(calc(100dvh - 1.5rem), calc(100vh - 1.5rem), 100%)' }}
         data-testid="extract-audio-modal"
       >
@@ -274,24 +231,35 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
             </h2>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className="text-xs font-medium text-slate-600 dark:text-slate-400"
+              className="text-xs font-medium text-slate-600 dark:text-slate-400 mr-1"
               data-testid="extract-audio-total-count"
             >
               {totalVideos} {totalVideos === 1 ? 'video' : 'videos'}
             </span>
-            {!isRunning && (
+            {canMinimize && (
               <button
                 type="button"
-                onClick={onClose}
-                className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
-                aria-label="Close Extract Audio dialog"
-                title="Close"
+                onClick={onMinimize}
+                className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                aria-label="Minimize Extract Audio dialog"
+                title="Minimize"
+                data-testid="extract-audio-minimize-button"
               >
-                <X className="h-4 w-4" />
+                <Minus className="h-4 w-4" />
               </button>
             )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+              aria-label={isRunning ? 'Minimize Extract Audio dialog' : 'Close Extract Audio dialog'}
+              title={isRunning ? 'Minimize' : 'Close'}
+              data-testid="extract-audio-close-button"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -357,7 +325,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
                         name="audio-output-format"
                         value={fmt}
                         checked={isSelected}
-                        onChange={() => setFormat(fmt)}
+                        onChange={() => onFormatChange(fmt)}
                         disabled={isRunning}
                         className="mt-0.5 h-4 w-4 accent-sky-500 cursor-pointer shrink-0"
                       />
@@ -409,7 +377,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
 
               <button
                 type="button"
-                onClick={handleChooseOutputFolder}
+                onClick={onChooseOutputFolder}
                 disabled={isRunning || !fsaWriteSupported}
                 className="glass-button px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -724,14 +692,25 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
           data-testid="extract-audio-footer"
         >
           {isRunning ? (
-            <button
-              type="button"
-              onClick={handleCancelOrClose}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
-            >
-              <Ban className="h-3.5 w-3.5" />
-              <span>Cancel</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onMinimize}
+                className="glass-button px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer"
+                data-testid="extract-audio-footer-minimize"
+              >
+                Minimize
+              </button>
+              <button
+                type="button"
+                onClick={onCancelExtraction}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-xs font-semibold transition cursor-pointer"
+                data-testid="extract-audio-cancel-button"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                <span>Cancel</span>
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -744,9 +723,10 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
 
               <button
                 type="button"
-                onClick={handleStartExtraction}
+                onClick={onStartExtraction}
                 disabled={!fsaWriteSupported || totalVideos === 0}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs shadow-lg shadow-sky-500/20 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="extract-audio-start-button"
               >
                 <AudioLines className="h-3.5 w-3.5" />
                 <span>

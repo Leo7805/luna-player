@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVideoLibrary } from './hooks/useVideoLibrary';
 import { usePlayback } from './hooks/usePlayback';
 import { useTheme } from './hooks/useTheme';
+import { useAudioExtraction } from './hooks/useAudioExtraction';
 import { Header } from './components/Header';
 import { VideoPlayer } from './components/VideoPlayer';
 import { Playlist } from './components/Playlist';
@@ -9,6 +10,8 @@ import { EmptyState } from './components/EmptyState';
 import { RecoveryBanner } from './components/RecoveryBanner';
 import { Tooltip } from './components/Tooltip';
 import { SettingsModal } from './components/SettingsModal';
+import { ExtractAudioDialog } from './components/ExtractAudioDialog';
+import { ExtractAudioFloatingPanel } from './components/ExtractAudioFloatingPanel';
 import { loadSettings, saveSettings } from './services/progressStorage';
 import { blurButtonAfterPointerClick } from './utils/shortcuts';
 import {
@@ -47,6 +50,8 @@ export function App() {
     isFsaOpenFileSupported,
     defaultOpenMode,
   } = useVideoLibrary();
+
+  const audioExtraction = useAudioExtraction(library);
 
   const {
     videoRef,
@@ -361,6 +366,8 @@ export function App() {
                     currentVideo={currentVideo}
                     onSelectVideo={(video) => selectVideo(video, true)}
                     onCollapseSidebar={() => handleSetPlaylistCollapsed(true)}
+                    onOpenExtractAudio={audioExtraction.openDialog}
+                    isExtractionRunning={audioExtraction.isRunning}
                   />
                 </div>
               </aside>
@@ -417,6 +424,34 @@ export function App() {
           onSave={handleSaveControlSettings}
           onClose={handleCloseSettings}
         />
+        {audioExtraction.viewMode === 'expanded' && audioExtraction.sourceSnapshot && (
+          <ExtractAudioDialog
+            isOpen
+            sourceSnapshot={audioExtraction.sourceSnapshot}
+            format={audioExtraction.format}
+            outputDirHandle={audioExtraction.outputDirHandle}
+            isSameFolderWarning={audioExtraction.isSameFolderWarning}
+            pickerError={audioExtraction.pickerError}
+            progress={audioExtraction.progress}
+            isRunning={audioExtraction.isRunning}
+            fsaWriteSupported={audioExtraction.fsaWriteSupported}
+            onFormatChange={audioExtraction.setFormat}
+            onChooseOutputFolder={audioExtraction.chooseOutputFolder}
+            onStartExtraction={audioExtraction.startExtraction}
+            onCancelExtraction={audioExtraction.cancelExtraction}
+            onMinimize={audioExtraction.minimizeDialog}
+            onClose={audioExtraction.closeDialog}
+          />
+        )}
+        {audioExtraction.viewMode === 'minimized' && audioExtraction.sourceSnapshot && (
+          <ExtractAudioFloatingPanel
+            progress={audioExtraction.progress}
+            totalVideos={audioExtraction.sourceSnapshot.videos.length}
+            isTheaterMode={isTheaterActive}
+            onRestore={audioExtraction.restoreDialog}
+            onDismiss={audioExtraction.dismissMinimized}
+          />
+        )}
       </div>
     </div>
   );

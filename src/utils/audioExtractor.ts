@@ -316,6 +316,29 @@ export function buildOutputPlan(
   return results;
 }
 
+export interface BatchProgressMetrics {
+  processedCount: number;
+  progressPercent: number;
+}
+
+/**
+ * Computes overall batch progress strictly from completed file outcomes
+ * (completed + skipped + failed) rather than per-file encoding estimates.
+ */
+export function computeBatchProgressMetrics(progress: {
+  totalFiles: number;
+  completedCount: number;
+  skippedCount: number;
+  failedCount: number;
+}): BatchProgressMetrics {
+  const processedCount = progress.completedCount + progress.skippedCount + progress.failedCount;
+  const progressPercent =
+    progress.totalFiles > 0
+      ? Math.min(100, Math.round((processedCount / progress.totalFiles) * 100))
+      : 0;
+  return { processedCount, progressPercent };
+}
+
 /**
  * Validates that a source video file size is positive and within the 2 GB limit.
  */

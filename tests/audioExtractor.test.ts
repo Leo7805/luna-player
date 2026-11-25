@@ -7,10 +7,12 @@ import {
   buildOutputFileName,
   buildOutputPlan,
   classifyFfmpegError,
+  computeBatchProgressMetrics,
   describeExtractionError,
   validateRelativePath,
   validateVideoFileSize,
 } from '../src/utils/audioExtractor';
+import { createSourceSnapshot } from '../src/hooks/useAudioExtraction';
 import {
   BatchExtractionProgress,
   BrowserOutputDirectoryWriter,
@@ -899,5 +901,102 @@ describe('File Mode audio extraction and collision handling', () => {
     } as unknown as FileSystemDirectoryHandle;
 
     await expect(checkIsSameAsSourceDirectory(filesLibrary, outputHandle)).resolves.toBe(false);
+  });
+});
+
+describe('background extraction progress metrics, stages, and snapshots', () => {
+  it('computes progress percentage strictly from completed, skipped, and failed file outcomes', () => {
+    expect(
+      computeBatchProgressMetrics({
+        totalFiles: 25,
+        completedCount: 20,
+        skippedCount: 0,
+        failedCount: 0,
+      })
+    ).toEqual({ processedCount: 20, progressPercent: 80 });
+
+    expect(
+      computeBatchProgressMetrics({
+        totalFiles: 25,
+        completedCount: 0,
+        skippedCount: 20,
+        failedCount: 0,
+      })
+    ).toEqual({ processedCount: 20, progressPercent: 80 });
+
+    expect(
+      computeBatchProgressMetrics({
+        totalFiles: 25,
+        completedCount: 10,
+        skippedCount: 8,
+        failedCount: 2,
+      })
+    ).toEqual({ processedCount: 20, progressPercent: 80 });
+
+    expect(
+      computeBatchProgressMetrics({
+        totalFiles: 0,
+        completedCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+      })
+    ).toEqual({ processedCount: 0, progressPercent: 0 });
+  });
+
+  it('emits preparing, reading, encoding, and saving stages during extraction and clears stage on completion', async () => {
+    const videos = [makeVideo('Clip 1.mp4')];
+    const writer = new InMemoryOutputWriter();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockResolvedValue({ data: new Uint8Array([1, 2, 3]), args: [] }),
+      terminate: vi.fn(),
+    };
+    const seenStages: Array<string | undefined> = [];
+
+    const result = await runBatchAudioExtraction({
+      videos,
+      format: 'mp3',
+      writer,
+      encoder,
+      onProgress: (p) => {
+        if (seenStages[seenStages.length - 1] !== p.currentStage) {
+          seenStages.push(p.currentStage);
+        }
+      },
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.currentStage).toBeUndefined();
+    expect(seenStages).toContain('preparing');
+    expect(seenStages).toContain('reading');
+    expect(seenStages).toContain('encoding');
+    expect(seenStages).toContain('saving');
+    expect(seenStages[seenStages.length - 1]).toBeUndefined();
+  });
+
+  it('creates an immutable source snapshot so later playlist mutations do not alter an active batch', () => {
+    const v1 = makeVideo('A.mp4');
+    const v2 = makeVideo('B.mp4');
+    const library: VideoLibrary = {
+      id: 'files:Selected Videos',
+      name: 'Selected Videos',
+      sourceType: 'files',
+      flatPlaylist: [v1, v2],
+      tree: {
+        id: 'root',
+        name: 'Selected Videos',
+        relativePath: '',
+        videos: [v1, v2],
+        subfolders: [],
+        totalVideoCount: 2,
+      },
+    };
+
+    const snapshot = createSourceSnapshot(library);
+    library.flatPlaylist.push(makeVideo('C.mp4'));
+
+    expect(snapshot.videos).toHaveLength(2);
+    expect(snapshot.videos.map((v) => v.name)).toEqual(['A.mp4', 'B.mp4']);
+    expect(snapshot.sourceType).toBe('files');
   });
 });

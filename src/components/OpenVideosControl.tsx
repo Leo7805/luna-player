@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { FolderOpen, Film, MoreHorizontal, ChevronDown } from 'lucide-react';
+import { FolderOpen, Film, ChevronDown } from 'lucide-react';
 import { OpenVideoMode } from '../utils/platform';
 import { VideoLibrary } from '../types/video';
 import { Tooltip } from './Tooltip';
@@ -147,9 +147,7 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative inline-flex items-center min-w-0 ${
-        variant === 'empty-state' ? 'gap-1.5' : ''
-      }`}
+      className="relative inline-flex items-center min-w-0 max-w-full"
     >
       {/* Hidden Folder Input Fallback (macOS Safari / non-FSA browsers) */}
       <input
@@ -182,7 +180,10 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
       />
 
       {variant === 'empty-state' ? (
-        <>
+        <div
+          data-testid="empty-state-split-button"
+          className="inline-flex items-stretch rounded-full bg-sky-500 text-slate-950 shadow-xl shadow-sky-500/25 max-w-full"
+        >
           <button
             type="button"
             onClick={(e) => {
@@ -191,17 +192,24 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
             }}
             disabled={isScanning}
             data-testid="open-videos-button"
-            className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm shadow-xl shadow-sky-500/25 transition transform hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-2.5 pl-6 pr-5 py-3.5 rounded-l-full hover:bg-sky-400 active:bg-sky-400/90 font-semibold text-sm transition-colors cursor-pointer disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950/10 focus-visible:z-10"
           >
             {defaultOpenMode === 'files' ? (
-              <Film className="h-5 w-5" />
+              <Film className="h-5 w-5 shrink-0" />
             ) : (
-              <FolderOpen className="h-5 w-5" />
+              <FolderOpen className="h-5 w-5 shrink-0" />
             )}
-            <span>
+            <span className="whitespace-nowrap">
               {isScanning ? `Scanning (${scanCount} found)...` : 'Open Videos'}
             </span>
           </button>
+
+          {/* Subtle Vertical Separator */}
+          <div
+            data-testid="empty-state-split-divider"
+            className="w-px my-2.5 bg-slate-950/20 shrink-0"
+            aria-hidden="true"
+          />
 
           <Tooltip content="More opening options" placement="bottom" disabled={menuOpen}>
             <button
@@ -213,12 +221,16 @@ export const OpenVideosControl: React.FC<OpenVideosControlProps> = ({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               data-testid="open-videos-menu-button"
-              className="inline-flex items-center justify-center p-3.5 rounded-2xl glass-button text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 transition cursor-pointer disabled:opacity-50"
+              className="flex items-center justify-center pl-3.5 pr-4 py-3.5 rounded-r-full text-slate-950 hover:bg-sky-400 active:bg-sky-400/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950/10 focus-visible:z-10 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
             >
-              <MoreHorizontal className="h-5 w-5" />
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                  menuOpen ? 'rotate-180' : ''
+                }`}
+              />
             </button>
           </Tooltip>
-        </>
+        </div>
       ) : (
         library && (
           <div
