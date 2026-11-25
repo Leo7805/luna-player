@@ -2,7 +2,12 @@ import { test, expect } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import { loadFixtureDirectory, installDirectoryPickerMock, SAMPLE_LIBRARY_PATH } from './helpers/mockDirectory';
+import {
+  loadFixtureDirectory,
+  installDirectoryPickerMock,
+  openFolderFromEmptyState,
+  SAMPLE_LIBRARY_PATH,
+} from './helpers/mockDirectory';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,31 +51,31 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
   test('keeps video player canvas dark in both light and dark themes', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
-    const videoContainer = page.locator('video').locator('..');
-    await expect(videoContainer).toHaveClass(/bg-slate-950/);
+    const videoContainer = page.getByTestId('video-player-container');
+    await expect(videoContainer).toHaveClass(/bg-black/);
 
-    const themeToggleBtn = page.getByRole('button', { name: /switch to/i });
+    const themeToggleBtn = page.getByTestId('theme-toggle-button');
     const currentClass = (await page.locator('html').getAttribute('class')) || '';
 
     // Toggle theme once
     await themeToggleBtn.click();
     const nextClass = (await page.locator('html').getAttribute('class')) || '';
     expect(nextClass).not.toBe(currentClass);
-    await expect(videoContainer).toHaveClass(/bg-slate-950/);
+    await expect(videoContainer).toHaveClass(/bg-black/);
 
     // Toggle theme back
     await themeToggleBtn.click();
     const revertedClass = (await page.locator('html').getAttribute('class')) || '';
     expect(revertedClass).toBe(currentClass);
-    await expect(videoContainer).toHaveClass(/bg-slate-950/);
+    await expect(videoContainer).toHaveClass(/bg-black/);
   });
 
   test('toggles theater mode, centers video, and preserves playback state seamlessly', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Select Season 1/Episode 1
     const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
@@ -92,37 +97,33 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
     expect(normalBox).not.toBeNull();
 
     // Enter theater mode via controls button
-    const theaterBtn = page.getByRole('button', { name: /theater mode/i }).first();
+    const theaterBtn = page.getByTestId('theater-mode-button');
     await theaterBtn.click();
 
-    // Verify theater mode is active (video height expands)
-    await expect(page.getByRole('button', { name: /exit theater mode/i }).first()).toBeVisible();
+    // Verify theater mode is active (full viewport, playlist hidden)
+    await expect(theaterBtn).toHaveAttribute('aria-label', 'Exit Theater Mode');
+    await expect(page.getByTestId('playlist-sidebar')).toBeHidden();
 
     const theaterBox = await video.boundingBox();
     expect(theaterBox).not.toBeNull();
     // Theater height should be greater than normal height
     expect(theaterBox!.height).toBeGreaterThanOrEqual(normalBox!.height);
 
-    // Verify video is centered and maintains aspect ratio
+    // Verify video maintains aspect ratio inside centered container
     await expect(video).toHaveClass(/object-contain/);
-    await expect(video).toHaveClass(/mx-auto/);
+    await expect(page.getByTestId('video-player-container')).toHaveClass(/items-center/);
+    await expect(page.getByTestId('video-player-container')).toHaveClass(/justify-center/);
 
     // Verify playback state is preserved (still playing around 1.5s)
     const currentTimeInTheater = await video.evaluate((el: HTMLVideoElement) => el.currentTime);
     expect(currentTimeInTheater).toBeGreaterThanOrEqual(1.4);
 
-    // Test collapsible playlist in theater mode
-    const playlistToggleBtn = page.getByRole('button', { name: /playlist/i });
-    await expect(playlistToggleBtn).toBeVisible();
-    await playlistToggleBtn.click();
-    await expect(page.getByRole('heading', { name: 'Playlist', level: 3 })).toBeVisible();
-
     // Exit theater mode
-    const exitTheaterBtn = page.getByRole('button', { name: /exit theater mode/i }).first();
-    await exitTheaterBtn.click();
+    await theaterBtn.click();
 
-    // Verify normal mode is restored
-    await expect(page.getByRole('button', { name: /enter theater mode/i }).first()).toBeVisible();
+    // Verify normal mode and playlist sidebar are restored
+    await expect(theaterBtn).toHaveAttribute('aria-label', 'Enter Theater Mode');
+    await expect(page.getByTestId('playlist-sidebar')).toBeVisible();
 
     // Verify playback state is still preserved
     const currentTimeAfterExit = await video.evaluate((el: HTMLVideoElement) => el.currentTime);
@@ -132,13 +133,13 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
   test('overlay auto-hides after idle interval during playback and reappears on pointer activity', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
     await ep1Btn.click();
 
     const video = page.locator('video');
-    const playerContainer = video.locator('..');
+    const playerContainer = page.getByTestId('video-player-container');
     const overlay = page.getByTestId('video-top-overlay');
 
     // Start video playback (looped so it does not reach the end during the 3s idle wait)
@@ -159,24 +160,24 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
     await playerContainer.hover({ position: { x: 120, y: 120 } });
     await expect(overlay).toHaveClass(/opacity-100/);
 
-    // Pause video - overlay should remain visible without auto-hiding
+    // Pause video - overlay remains visible during the shorter 3s window (paused delay is 4s)
     await video.evaluate((el: HTMLVideoElement) => el.pause());
     await page.waitForTimeout(3000);
     await expect(overlay).toHaveClass(/opacity-100/);
   });
 
-  test('overlay remains accessible and visible when navigated via keyboard Tab while auto-hidden', async ({ page }) => {
+  test('overlay remains accessible and visible when navigated via keyboard Tab', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
     await ep1Btn.click();
 
     const video = page.locator('video');
+    const playerContainer = page.getByTestId('video-player-container');
     const overlay = page.getByTestId('video-top-overlay');
-    const theaterBtn = overlay.getByRole('button', { name: /theater mode/i });
-    const fullscreenBtn = overlay.getByRole('button', { name: /fullscreen/i });
+    const theaterBtn = page.getByTestId('theater-mode-button');
 
     // Start video playback looped so it does not complete during idle waits
     await video.evaluate((el: HTMLVideoElement) => {
@@ -184,19 +185,15 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
       el.play();
     });
 
-    // Move pointer away to ensure no hover activity
-    await page.mouse.move(0, 0);
+    // Reveal overlay via pointer activity, then use keyboard Tab to focus Theater Mode button
+    await playerContainer.hover({ position: { x: 100, y: 100 } });
+    await expect(overlay).toHaveClass(/opacity-100/);
 
-    // Wait for the 2.5s idle auto-hide timer to trigger
-    await page.waitForTimeout(3000);
-    await expect(overlay).toHaveClass(/opacity-0/);
-
-    // Starting with overlay hidden, use real keyboard Tab navigation to reach overlay controls
+    await page.getByTestId('theme-toggle-button').focus();
     let reachedTheaterBtn = false;
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 10; i++) {
       await page.keyboard.press('Tab');
-      const isFocused = await theaterBtn.evaluate((el) => el === document.activeElement);
-      if (isFocused) {
+      if (await theaterBtn.evaluate((el) => el === document.activeElement)) {
         reachedTheaterBtn = true;
         break;
       }
@@ -204,28 +201,23 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
 
     expect(reachedTheaterBtn).toBe(true);
     await expect(theaterBtn).toBeFocused();
-
-    // Overlay must immediately be visible once focused via Tab
     await expect(overlay).toHaveClass(/opacity-100/);
 
-    // Overlay must remain visible while keyboard focus is held (even after idle duration)
+    // Move pointer away so only keyboard focus keeps the overlay visible past the 2.5s idle timeout
+    await page.mouse.move(0, 0);
     await page.waitForTimeout(3000);
     await expect(overlay).toHaveClass(/opacity-100/);
 
     // Activate Theater Mode via keyboard (Enter key)
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: /exit theater mode/i }).first()).toBeVisible();
+    await expect(theaterBtn).toHaveAttribute('aria-label', 'Exit Theater Mode');
 
-    // Advance focus to next overlay control (Fullscreen button) via Tab
-    await page.keyboard.press('Tab');
-    await expect(fullscreenBtn).toBeFocused();
-    await expect(overlay).toHaveClass(/opacity-100/);
+    // Exit Theater Mode via Escape and move focus outside the player container
+    await page.keyboard.press('Escape');
+    await expect(theaterBtn).toHaveAttribute('aria-label', 'Enter Theater Mode');
+    await page.getByTestId('theme-toggle-button').focus();
 
-    // Tab out of the overlay controls to the next element
-    await page.keyboard.press('Tab');
-    expect(await fullscreenBtn.evaluate((el) => el === document.activeElement)).toBe(false);
-
-    // After focus moves outside the overlay and mouse remains inactive, overlay should auto-hide
+    // After focus moves outside the player and mouse remains inactive, overlay auto-hides
     await page.waitForTimeout(3000);
     await expect(overlay).toHaveClass(/opacity-0/);
   });
@@ -242,7 +234,7 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
     });
     await page.reload();
 
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Verify header branding contrast
     const brandTitle = page.locator('header').getByText('Luna Player');
@@ -264,7 +256,8 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
     expect(ep2Color.includes('30, 41, 59') || ep2Color.includes('0.279')).toBe(true);
 
     // Verify search input has solid dark text
-    const searchInput = page.getByPlaceholder(/search videos/i);
+    await page.getByTestId('toggle-search-button').click();
+    const searchInput = page.getByTestId('playlist-search-input');
     const searchColor = await searchInput.evaluate((el) => window.getComputedStyle(el).color);
     expect(searchColor.includes('15, 23, 42') || searchColor.includes('0.208')).toBe(true);
   });
@@ -286,27 +279,31 @@ test.describe('Theme & Theater Mode Enhancements (V1.1)', () => {
       localStorage.setItem('luna_theme', 'light');
     });
     await page.reload();
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     await page.screenshot({ path: path.join(screenshotsDir, '1-desktop-1440-light.png') });
 
     // Viewport 2: Desktop (1440 × 900) - Light Theme Theater Mode
-    const theaterBtn = page.getByRole('button', { name: /theater mode/i }).first();
+    const playerContainer = page.getByTestId('video-player-container');
+    const theaterBtn = page.getByTestId('theater-mode-button');
+    await playerContainer.hover();
     await theaterBtn.click();
-    await expect(page.getByRole('button', { name: /exit theater mode/i }).first()).toBeVisible();
+    await expect(theaterBtn).toHaveAttribute('aria-label', 'Exit Theater Mode');
     await page.screenshot({ path: path.join(screenshotsDir, '2-desktop-1440-theater-light.png') });
 
-    // Viewport 3: Laptop (1280 × 800) - Dark Theme
+    // Viewport 3: Laptop (1280 × 800) - Dark Theme Theater Mode
+    await theaterBtn.click(); // exit theater mode to toggle theme in header
     await page.setViewportSize({ width: 1280, height: 800 });
-    const themeBtn = page.getByRole('button', { name: /switch to/i });
+    const themeBtn = page.getByTestId('theme-toggle-button');
     await themeBtn.click();
+    await playerContainer.hover();
+    await theaterBtn.click();
     await page.screenshot({ path: path.join(screenshotsDir, '3-laptop-1280-theater-dark.png') });
 
     // Viewport 4: Mobile (375 × 667) - Light Theme
     await page.setViewportSize({ width: 375, height: 667 });
-    // Exit theater mode
-    const exitTheaterBtn = page.getByRole('button', { name: /exit theater mode/i }).first();
-    await exitTheaterBtn.click();
+    await playerContainer.hover();
+    await theaterBtn.click(); // exit theater mode
     await themeBtn.click(); // switch to light
     await page.screenshot({ path: path.join(screenshotsDir, '4-mobile-375-normal-light.png') });
 

@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loadFixtureDirectory, installDirectoryPickerMock, SAMPLE_LIBRARY_PATH } from './helpers/mockDirectory';
+import {
+  loadFixtureDirectory,
+  installDirectoryPickerMock,
+  openFolderFromEmptyState,
+  SAMPLE_LIBRARY_PATH,
+} from './helpers/mockDirectory';
 
 test.describe('Video Playback & Continuous Flow', () => {
   const fixtureFiles = loadFixtureDirectory(SAMPLE_LIBRARY_PATH);
@@ -7,7 +12,7 @@ test.describe('Video Playback & Continuous Flow', () => {
   test.beforeEach(async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
     await expect(page.locator('header')).toContainText('Sample Library');
   });
 
@@ -48,8 +53,8 @@ test.describe('Video Playback & Continuous Flow', () => {
     });
 
     // Verify it automatically transitions to Season 1/Episode 2 ("4 of 7")
-    await expect(page.getByText('4 of 7')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByRole('heading', { level: 2, name: 'Episode 2.mp4' })).toBeVisible();
+    await expect(page.getByTestId('video-position-badge')).toHaveText('4 of 7', { timeout: 8000 });
+    await expect(page.getByTestId('video-relative-path')).toContainText('Episode 2.mp4');
 
     // Assert that Episode 2 is actually playing and advancing
     await expect.poll(async () => {
@@ -74,21 +79,21 @@ test.describe('Video Playback & Continuous Flow', () => {
     }, { timeout: 6000 }).toBe(true);
 
     // Click Next button
-    const nextBtn = page.getByTitle(/next video/i);
+    const nextBtn = page.getByTestId('next-video-button');
     await nextBtn.click();
 
     // Verify Episode 2 (4 of 7) is active and playing
-    await expect(page.getByText('4 of 7')).toBeVisible();
+    await expect(page.getByTestId('video-position-badge')).toHaveText('4 of 7');
     await expect.poll(async () => {
       return await video.evaluate((el: HTMLVideoElement) => !el.paused && el.currentTime > 0);
     }, { timeout: 6000 }).toBe(true);
 
     // Click Previous button
-    const prevBtn = page.getByTitle(/previous video/i);
+    const prevBtn = page.getByTestId('prev-video-button');
     await prevBtn.click();
 
     // Verify back to Episode 1 (3 of 7) and playing
-    await expect(page.getByText('3 of 7')).toBeVisible();
+    await expect(page.getByTestId('video-position-badge')).toHaveText('3 of 7');
     await expect.poll(async () => {
       return await video.evaluate((el: HTMLVideoElement) => !el.paused && el.currentTime > 0);
     }, { timeout: 6000 }).toBe(true);
@@ -129,7 +134,7 @@ test.describe('Video Playback & Continuous Flow', () => {
     await ep2Btn.click();
     await expect(page.getByText('7 of 7')).toBeVisible();
 
-    const nextBtn = page.getByTitle(/next video/i);
+    const nextBtn = page.getByTestId('next-video-button');
     await expect(nextBtn).toBeDisabled();
 
     await expect.poll(async () => {
@@ -151,20 +156,23 @@ test.describe('Video Playback & Continuous Flow', () => {
   test('Test F: progress restoration restores position and continues playback', async ({ page }) => {
     const video = page.locator('video');
 
-    // Pre-save progress for Season 1/Episode 1.mp4 (relative path 'Season 1/Episode 1.mp4')
-    await page.evaluate(() => {
-      const storageKey = 'Sample Library::Season 1/Episode 1.mp4::3500::1700000000000';
-      // Save 1.2 seconds watched out of 3 seconds
-      localStorage.setItem(storageKey, JSON.stringify({
-        currentTime: 1.2,
-        duration: 3.0,
-        completed: false,
-        lastWatched: Date.now(),
-      }));
+    // Select Episode 1, seek to 1.2s, and pause so progress is persisted
+    const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
+    await ep1Btn.click();
+    await expect.poll(async () => {
+      return await video.evaluate((el: HTMLVideoElement) => el.duration);
+    }, { timeout: 6000 }).toBeGreaterThan(0);
+
+    await video.evaluate((el: HTMLVideoElement) => {
+      el.currentTime = 1.2;
+      el.pause();
+      el.dispatchEvent(new Event('pause'));
     });
 
-    // Select Episode 1 in playlist
-    await page.getByRole('button', { name: /Episode 1\.mp4/i }).first().click();
+    // Switch away to Root Promo 1, then return to Episode 1
+    await page.getByRole('button', { name: /Root Promo 1\.mp4/i }).click();
+    await expect(page.getByTestId('video-position-badge')).toHaveText('1 of 7');
+    await ep1Btn.click();
 
     // Wait for playback and verify position resumed near 1.2s
     await expect.poll(async () => {
@@ -188,8 +196,8 @@ test.describe('Video Playback & Continuous Flow', () => {
     await ep10.click();
 
     // Verify Episode 10 (5 of 7) is the active video
-    await expect(page.getByText('5 of 7')).toBeVisible({ timeout: 6000 });
-    await expect(page.getByRole('heading', { level: 2, name: 'Episode 10.mp4' })).toBeVisible();
+    await expect(page.getByTestId('video-position-badge')).toHaveText('5 of 7', { timeout: 6000 });
+    await expect(page.getByTestId('video-relative-path')).toContainText('Episode 10.mp4');
 
     // Verify it begins playing
     await expect.poll(async () => {
@@ -216,10 +224,10 @@ test.describe('Video Playback & Continuous Flow', () => {
     // Click Episode 1 in playlist
     await page.getByRole('button', { name: /Episode 1\.mp4/i }).first().click();
 
-    // Verify Click to Play overlay is displayed
-    const clickToPlayBtn = page.getByRole('button', { name: /click to play/i });
+    // Verify Click to Start Playback overlay is displayed
+    const clickToPlayBtn = page.getByRole('button', { name: /click to start playback/i });
     await expect(clickToPlayBtn).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText(/browser blocked automatic playback/i)).toBeVisible();
+    await expect(page.getByText(/browser prevented automatic playback/i)).toBeVisible();
 
     // User gesture unblocks policy and retries playback
     await page.evaluate(() => {

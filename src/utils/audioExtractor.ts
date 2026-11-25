@@ -230,15 +230,23 @@ export function validateRelativePath(relativePath: string): ValidatedRelativePat
   };
 }
 
+export interface BuildOutputPlanOptions {
+  preserveFolderStructure?: boolean;
+}
+
 /**
- * Maps a list of source VideoItems to their target output paths, preserving nested
- * folder hierarchy and safely disambiguating duplicate base filenames with different
- * video extensions within the same folder.
+ * Maps a list of source VideoItems to their target output paths.
+ * - Folder Mode (`preserveFolderStructure: true`, default): preserves nested folder
+ *   hierarchy and disambiguates duplicate base filenames using source extensions.
+ * - File Mode (`preserveFolderStructure: false`): saves directly into the chosen output
+ *   folder and deterministically disambiguates collisions with numeric suffixes (`(2)`, `(3)`, ...).
  */
 export function buildOutputPlan(
   videos: VideoItem[],
-  format: AudioOutputFormat
+  format: AudioOutputFormat,
+  options?: BuildOutputPlanOptions
 ): PlannedExtractionItem[] {
+  const preserveFolderStructure = options?.preserveFolderStructure ?? true;
   const usedPathsLower = new Set<string>();
   const results: PlannedExtractionItem[] = [];
 
@@ -257,7 +265,8 @@ export function buildOutputPlan(
       continue;
     }
 
-    const { directoryParts, fileName, sourceExtension } = validation;
+    const { fileName, sourceExtension } = validation;
+    const directoryParts = preserveFolderStructure ? validation.directoryParts : [];
     const dirPrefix = directoryParts.length > 0 ? `${directoryParts.join('/')}/` : '';
 
     // 1. Try standard base filename replacement (e.g. "Lesson 01.mp3")
@@ -265,19 +274,30 @@ export function buildOutputPlan(
     let candidateRelPath = `${dirPrefix}${candidateFileName}`;
     let disambiguated = false;
 
-    // 2. If another video in the same folder already claimed this output path,
-    // disambiguate using the source extension (e.g. "Lesson 01 (mkv).mp3") or numeric counter.
+    // 2. If another video already claimed this output path, disambiguate deterministically.
     if (usedPathsLower.has(candidateRelPath.toLowerCase())) {
       disambiguated = true;
-      const extTag = sourceExtension || 'alt';
-      candidateFileName = buildOutputFileName(fileName, format, extTag);
-      candidateRelPath = `${dirPrefix}${candidateFileName}`;
-
-      let counter = 2;
-      while (usedPathsLower.has(candidateRelPath.toLowerCase())) {
-        candidateFileName = buildOutputFileName(fileName, format, `${extTag}-${counter}`);
+      if (preserveFolderStructure) {
+        // Folder Mode: disambiguate using the source extension (e.g. "Lesson 01 (mkv).mp3")
+        // or extension + numeric counter.
+        const extTag = sourceExtension || 'alt';
+        candidateFileName = buildOutputFileName(fileName, format, extTag);
         candidateRelPath = `${dirPrefix}${candidateFileName}`;
-        counter++;
+
+        let counter = 2;
+        while (usedPathsLower.has(candidateRelPath.toLowerCase())) {
+          candidateFileName = buildOutputFileName(fileName, format, `${extTag}-${counter}`);
+          candidateRelPath = `${dirPrefix}${candidateFileName}`;
+          counter++;
+        }
+      } else {
+        // File Mode: disambiguate using deterministic numeric suffixes (e.g. "Episode 01 (2).mp3").
+        let counter = 2;
+        while (usedPathsLower.has(candidateRelPath.toLowerCase())) {
+          candidateFileName = buildOutputFileName(fileName, format, String(counter));
+          candidateRelPath = `${dirPrefix}${candidateFileName}`;
+          counter++;
+        }
       }
     }
 

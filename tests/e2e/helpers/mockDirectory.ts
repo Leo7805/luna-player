@@ -159,3 +159,18 @@ export async function installDirectoryPickerMock(
     { rootName: rootFolderName, files: fixtureFiles, opts: options }
   );
 }
+
+/**
+ * Opens a video folder from the empty-state Open Videos control (desktop default: Folder Mode).
+ */
+export async function openFolderFromEmptyState(page: Page): Promise<void> {
+  await page.getByTestId('open-videos-button').click();
+}
+
+/**
+ * Opens individual video files from the empty-state Open Videos dropdown menu (File Mode).
+ */
+export async function openFilesFromEmptyState(page: Page): Promise<void> {
+  await page.getByTestId('open-videos-menu-button').click();
+  await page.getByTestId('empty-state-menu-open-files').click();
+}

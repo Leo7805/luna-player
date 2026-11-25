@@ -72,6 +72,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fsaWriteSupported = isDirectoryWriteSupported();
+  const isFilesMode = library.sourceType === 'files';
   const totalVideos = library.flatPlaylist.length;
   const isRunning =
     progress?.state === 'initializing' || progress?.state === 'processing';
@@ -113,6 +114,14 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
   const exampleOutputPath = useMemo(() => {
     const ext = AUDIO_FORMAT_CONFIGS[format].extension;
     if (library.flatPlaylist.length > 0) {
+      if (isFilesMode) {
+        const firstVideo = library.flatPlaylist[0];
+        const validated = validateRelativePath(firstVideo.relativePath);
+        if (validated.valid) {
+          return buildOutputFileName(validated.fileName, format);
+        }
+        return buildOutputFileName(firstVideo.name, format);
+      }
       // Prefer a nested video if one exists so the user sees folder preservation in the preview
       const nestedSample =
         library.flatPlaylist.find((v) => v.relativePath.includes('/')) ||
@@ -125,8 +134,8 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
           : outName;
       }
     }
-    return `English / Lesson 01.${ext}`;
-  }, [library.flatPlaylist, format]);
+    return isFilesMode ? `Video 01.${ext}` : `English / Lesson 01.${ext}`;
+  }, [library.flatPlaylist, format, isFilesMode]);
 
   if (!isOpen) return null;
 
@@ -173,6 +182,7 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
       videos: library.flatPlaylist,
       format,
       writer,
+      preserveFolderStructure: !isFilesMode,
       signal: abortController.signal,
       onProgress: (updated) => {
         setProgress(updated);
@@ -308,6 +318,20 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
             </div>
           )}
 
+          {/* Source Mode Summary */}
+          <div className="space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+            <p className="font-medium text-slate-800 dark:text-slate-200" data-testid="extract-audio-source-description">
+              {isFilesMode
+                ? 'Extract audio from all videos in the current playlist'
+                : 'Extract audio from all videos in the current folder'}
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400" data-testid="extract-audio-ready-count">
+              {totalVideos === 0
+                ? 'No videos ready for extraction'
+                : `${totalVideos} ${totalVideos === 1 ? 'video' : 'videos'} ready for extraction`}
+            </p>
+          </div>
+
           {/* Output Format Radio Selection */}
           <fieldset disabled={isRunning} className="space-y-2 min-w-0">
             <legend className="text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -421,7 +445,11 @@ export function ExtractAudioDialog({ isOpen, onClose, library }: ExtractAudioDia
 
             <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
               <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="font-medium">Preserve original folder structure</span>
+              <span className="font-medium" data-testid="extract-audio-output-mode">
+                {isFilesMode
+                  ? 'Save extracted audio directly into the chosen output folder'
+                  : 'Preserve original folder structure'}
+              </span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-slate-100/80 dark:bg-white/[0.03] border border-slate-300/60 dark:border-white/10 min-w-0">

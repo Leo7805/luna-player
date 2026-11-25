@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { loadFixtureDirectory, installDirectoryPickerMock, SAMPLE_LIBRARY_PATH } from './helpers/mockDirectory';
+import {
+  loadFixtureDirectory,
+  installDirectoryPickerMock,
+  openFolderFromEmptyState,
+  openFilesFromEmptyState,
+  SAMPLE_LIBRARY_PATH,
+} from './helpers/mockDirectory';
 
 test.describe('Local Folder Selection & Discovery', () => {
   const fixtureFiles = loadFixtureDirectory(SAMPLE_LIBRARY_PATH);
@@ -8,8 +14,8 @@ test.describe('Local Folder Selection & Discovery', () => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
 
-    // Click Open Video Folder
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    // Open folder via Open Videos control
+    await openFolderFromEmptyState(page);
 
     // Verify header updates with folder name
     await expect(page.locator('header')).toContainText('Sample Library');
@@ -60,5 +66,41 @@ test.describe('Local Folder Selection & Discovery', () => {
     await expect(page.getByRole('button', { name: /Root Promo 1\.mp4/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Root Promo 2\.mp4/i })).toBeVisible();
     await expect(page.getByText('notes.txt')).not.toBeVisible();
+  });
+
+  test('opens individual video files in File Mode via the Open Videos dropdown menu', async ({ page }) => {
+    const mp4Fixtures = fixtureFiles.filter((f) => f.name.endsWith('.mp4')).slice(0, 2);
+    await page.addInitScript(
+      ({ files }) => {
+        window.showOpenFilePicker = async () =>
+          files.map((item) => {
+            const binaryString = atob(item.base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const fileObj = new File([bytes], item.name, {
+              type: 'video/mp4',
+              lastModified: 1700000000000,
+            });
+            return {
+              kind: 'file',
+              name: item.name,
+              queryPermission: async () => 'granted',
+              requestPermission: async () => 'granted',
+              getFile: async () => fileObj,
+            } as unknown as FileSystemFileHandle;
+          });
+      },
+      { files: mp4Fixtures }
+    );
+
+    await page.goto('/');
+    await openFilesFromEmptyState(page);
+
+    await expect(page.locator('header')).toContainText('Selected Videos');
+    await expect(page.locator('header')).toContainText('2 videos');
+    await expect(page.getByRole('button', { name: new RegExp(mp4Fixtures[0].name.replace('.', '\\.'), 'i') })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(mp4Fixtures[1].name.replace('.', '\\.'), 'i') })).toBeVisible();
   });
 });

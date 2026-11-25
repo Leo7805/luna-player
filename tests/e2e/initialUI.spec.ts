@@ -11,23 +11,29 @@ test.describe('Initial UI & Loading', () => {
 
     await page.goto('/');
 
-    // Check Branding in Header
+    // Check Branding & Header controls
     await expect(page.locator('header')).toBeVisible();
     await expect(page.locator('header').getByText('Luna Player')).toBeVisible();
-    await expect(page.locator('header').getByText(/v1\.[01]/)).toBeVisible();
+    await expect(page.locator('header').getByText('Local Video Player')).toBeVisible();
+    await expect(page.getByTestId('settings-button')).toBeVisible();
+    await expect(page.getByTestId('theme-toggle-button')).toBeVisible();
 
-    // Check Open Folder button in Header and Hero
-    const headerOpenBtn = page.locator('header').getByRole('button', { name: /open folder/i });
-    await expect(headerOpenBtn).toBeVisible();
-
-    // Check Empty State Hero Card
+    // Check Empty State Hero Card & Open Videos split control
     await expect(page.getByRole('heading', { name: 'Luna Player', level: 2 })).toBeVisible();
     await expect(
       page.getByText(/open a local video folder to discover movies/i)
     ).toBeVisible();
 
-    const heroOpenBtn = page.getByRole('button', { name: /open video folder/i });
+    const heroOpenBtn = page.getByTestId('open-videos-button');
     await expect(heroOpenBtn).toBeVisible();
+    await expect(heroOpenBtn).toHaveText(/open videos/i);
+
+    const openMenuBtn = page.getByTestId('open-videos-menu-button');
+    await expect(openMenuBtn).toBeVisible();
+    await openMenuBtn.click();
+    await expect(page.getByTestId('empty-state-menu-open-folder')).toBeVisible();
+    await expect(page.getByTestId('empty-state-menu-open-files')).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // Check feature cards
     await expect(page.getByText('100% Private')).toBeVisible();

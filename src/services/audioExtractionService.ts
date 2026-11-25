@@ -124,7 +124,7 @@ export async function checkIsSameAsSourceDirectory(
   library: VideoLibrary | null,
   outputHandle: FileSystemDirectoryHandle
 ): Promise<boolean> {
-  if (!library) return false;
+  if (!library || library.sourceType === 'files') return false;
 
   if (library.handle && typeof library.handle.isSameEntry === 'function') {
     try {
@@ -265,6 +265,7 @@ export interface RunBatchAudioExtractionOptions {
   videos: VideoItem[];
   format: AudioOutputFormat;
   writer: OutputDirectoryWriter;
+  preserveFolderStructure?: boolean;
   encoder?: AudioEncoderAdapter;
   signal?: AbortSignal;
   maxFileSizeBytes?: number;
@@ -338,6 +339,7 @@ async function runBatchAudioExtractionInternal({
   videos,
   format,
   writer,
+  preserveFolderStructure = true,
   encoder = defaultFfmpegService,
   signal,
   maxFileSizeBytes = MAX_SOURCE_VIDEO_SIZE_BYTES,
@@ -396,8 +398,8 @@ async function runBatchAudioExtractionInternal({
     return { ...progress, records: [...records] };
   }
 
-  // 2. Plan output paths and disambiguate duplicate base filenames in the same directory
-  const plan = buildOutputPlan(videos, format);
+  // 2. Plan output paths and disambiguate duplicate base filenames deterministically
+  const plan = buildOutputPlan(videos, format, { preserveFolderStructure });
 
   // 3. Lazy-initialize FFmpeg only when needed
   let encoderInitialized = false;

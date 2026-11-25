@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loadFixtureDirectory, installDirectoryPickerMock, SAMPLE_LIBRARY_PATH } from './helpers/mockDirectory';
+import {
+  loadFixtureDirectory,
+  installDirectoryPickerMock,
+  openFolderFromEmptyState,
+  SAMPLE_LIBRARY_PATH,
+} from './helpers/mockDirectory';
 
 test.describe('Responsive Layout & Display Verification', () => {
   const fixtureFiles = loadFixtureDirectory(SAMPLE_LIBRARY_PATH);
@@ -8,7 +13,7 @@ test.describe('Responsive Layout & Display Verification', () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Verify main video player and playlist are visible side-by-side
     const video = page.locator('video');
@@ -32,7 +37,7 @@ test.describe('Responsive Layout & Display Verification', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Check no horizontal overflow
     const hasHorizontalOverflow = await page.evaluate(() => {
@@ -41,9 +46,9 @@ test.describe('Responsive Layout & Display Verification', () => {
     expect(hasHorizontalOverflow).toBe(false);
 
     // Verify player controls remain accessible
-    const prevBtn = page.getByTitle(/previous video/i);
-    const nextBtn = page.getByTitle(/next video/i);
-    const autoplayToggle = page.getByRole('button', { name: /autoplay next/i });
+    const prevBtn = page.getByTestId('prev-video-button');
+    const nextBtn = page.getByTestId('next-video-button');
+    const autoplayToggle = page.getByTestId('autoplay-toggle-button');
 
     await expect(prevBtn).toBeVisible();
     await expect(nextBtn).toBeVisible();
@@ -55,14 +60,15 @@ test.describe('Responsive Layout & Display Verification', () => {
     await expect(playlistHeader).toBeVisible();
   });
 
-  test('video element includes native controls and fullscreen readiness', async ({ page }) => {
+  test('video player includes integrated controls and fullscreen readiness', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     const video = page.locator('video');
-    await expect(video).toHaveAttribute('controls', '');
     await expect(video).toHaveAttribute('playsinline', '');
+    await expect(page.getByTestId('video-bottom-controls')).toBeVisible();
+    await expect(page.getByTestId('fullscreen-toggle-button')).toBeVisible();
 
     // Verify fullscreen API readiness on video element
     const isFullscreenSupported = await video.evaluate((el: HTMLVideoElement) => {

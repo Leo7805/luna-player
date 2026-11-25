@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { loadFixtureDirectory, installDirectoryPickerMock, SAMPLE_LIBRARY_PATH } from './helpers/mockDirectory';
+import {
+  loadFixtureDirectory,
+  installDirectoryPickerMock,
+  openFolderFromEmptyState,
+  SAMPLE_LIBRARY_PATH,
+} from './helpers/mockDirectory';
 
 test.describe('Playback Position & Progress Persistence', () => {
   const fixtureFiles = loadFixtureDirectory(SAMPLE_LIBRARY_PATH);
@@ -7,7 +12,7 @@ test.describe('Playback Position & Progress Persistence', () => {
   test('saves progress to localStorage and restores position without cross-video leakage', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Select Season 1/Episode 1 (duration: 3 seconds in fixture)
     const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
@@ -44,7 +49,7 @@ test.describe('Playback Position & Progress Persistence', () => {
   test('completed video resets resume position to the beginning', async ({ page }) => {
     await installDirectoryPickerMock(page, 'Sample Library', fixtureFiles);
     await page.goto('/');
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     const ep1Btn = page.getByRole('button', { name: /Episode 1\.mp4/i }).first();
     await ep1Btn.click();

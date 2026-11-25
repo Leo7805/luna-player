@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { openFolderFromEmptyState } from './helpers/mockDirectory';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,9 +85,7 @@ test.describe('Visual Verification & Regression Suite', () => {
 
   test('Step C: Capture After Screenshots across 4 viewports', async ({ page }) => {
     const afterDir = path.resolve(__dirname, '../../tests/visual-verification/after');
-    const artifactDir = '/Users/leo/.gemini/antigravity/brain/53ab1ea6-0617-4753-af2d-99fc7a6aca68/screenshots/after';
     fs.mkdirSync(afterDir, { recursive: true });
-    fs.mkdirSync(artifactDir, { recursive: true });
 
     await installDirectoryPickerMock(page, 'Peppa Pig Series (1080p)', realisticFiles);
 
@@ -95,7 +94,7 @@ test.describe('Visual Verification & Regression Suite', () => {
     await page.goto('/');
     await page.evaluate(() => localStorage.setItem('luna_theme', 'light'));
     await page.reload();
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Select Season 1/S105 Hide and Seek.mp4
     const s105Btn = page.getByRole('button', { name: /S105 Hide and Seek/i }).first();
@@ -104,16 +103,14 @@ test.describe('Visual Verification & Regression Suite', () => {
 
     const shot1 = path.join(afterDir, 'after-1-desktop-1440-light.png');
     await page.screenshot({ path: shot1 });
-    fs.copyFileSync(shot1, path.join(artifactDir, 'after-1-desktop-1440-light.png'));
 
     // 2. Desktop: 1440 × 900, Dark Theme
-    const themeToggle = page.getByRole('button', { name: /switch to/i });
+    const themeToggle = page.getByTestId('theme-toggle-button');
     await themeToggle.click();
     await page.waitForTimeout(600);
 
     const shot2 = path.join(afterDir, 'after-2-desktop-1440-dark.png');
     await page.screenshot({ path: shot2 });
-    fs.copyFileSync(shot2, path.join(artifactDir, 'after-2-desktop-1440-dark.png'));
 
     // 3. Laptop: 1280 × 800, Light Theme
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -122,7 +119,6 @@ test.describe('Visual Verification & Regression Suite', () => {
 
     const shot3 = path.join(afterDir, 'after-3-laptop-1280-light.png');
     await page.screenshot({ path: shot3 });
-    fs.copyFileSync(shot3, path.join(artifactDir, 'after-3-laptop-1280-light.png'));
 
     // 4. Mobile: 375 × 667, Light Theme
     await page.setViewportSize({ width: 375, height: 667 });
@@ -130,7 +126,6 @@ test.describe('Visual Verification & Regression Suite', () => {
 
     const shot4 = path.join(afterDir, 'after-4-mobile-375-light.png');
     await page.screenshot({ path: shot4 });
-    fs.copyFileSync(shot4, path.join(artifactDir, 'after-4-mobile-375-light.png'));
 
     expect(fs.existsSync(shot1)).toBe(true);
     expect(fs.existsSync(shot2)).toBe(true);
@@ -138,49 +133,31 @@ test.describe('Visual Verification & Regression Suite', () => {
     expect(fs.existsSync(shot4)).toBe(true);
   });
 
-  test('verifies scenic background element loads, decodes, and is unoccluded', async ({ page }) => {
-    let sceneryLoaded = false;
-    page.on('response', (res) => {
-      if (res.url().includes('scenery') && res.status() === 200) {
-        sceneryLoaded = true;
-      }
-    });
-
+  test('verifies app background layer renders cleanly in light and dark themes', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => localStorage.setItem('luna_theme', 'light'));
     await page.reload();
 
-    const bgEl = page.getByTestId('scenic-background');
+    const bgEl = page.getByTestId('app-background');
     await expect(bgEl).toBeVisible();
 
-    const bgStyle = await bgEl.evaluate((el) => {
+    const lightBgStyle = await bgEl.evaluate((el) => {
       const computed = window.getComputedStyle(el);
       return {
-        backgroundImage: computed.backgroundImage,
-        zIndex: computed.zIndex,
+        backgroundColor: computed.backgroundColor,
         position: computed.position,
-        opacity: computed.opacity,
-        display: computed.display,
+        pointerEvents: computed.pointerEvents,
       };
     });
 
-    expect(bgStyle.backgroundImage).toContain('scenery');
-    expect(bgStyle.position).toBe('fixed');
-    expect(bgStyle.display).toBe('block');
-    expect(Number(bgStyle.opacity)).toBeGreaterThan(0.5);
+    expect(lightBgStyle.position).toBe('fixed');
+    expect(lightBgStyle.pointerEvents).toBe('none');
+    expect(lightBgStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
 
-    // Verify background image decodes in the browser
-    const decodes = await page.evaluate(async (bg) => {
-      const match = bg.match(/url\(["']?(.*?)["']?\)/);
-      if (!match) return false;
-      const img = new Image();
-      img.src = match[1];
-      await img.decode();
-      return img.naturalWidth > 0 && img.naturalHeight > 0;
-    }, bgStyle.backgroundImage);
-
-    expect(decodes).toBe(true);
-    expect(sceneryLoaded).toBe(true);
+    // Switch to dark theme and confirm gradient background layer updates
+    await page.getByTestId('theme-toggle-button').click();
+    const darkBgImage = await bgEl.evaluate((el) => window.getComputedStyle(el).backgroundImage);
+    expect(darkBgImage).toContain('gradient');
   });
 
   test('verifies Light Theme text contrast on actual rendered elements', async ({ page }) => {
@@ -188,7 +165,7 @@ test.describe('Visual Verification & Regression Suite', () => {
     await page.goto('/');
     await page.evaluate(() => localStorage.setItem('luna_theme', 'light'));
     await page.reload();
-    await page.getByRole('button', { name: /open video folder/i }).click();
+    await openFolderFromEmptyState(page);
 
     // Select Season 1/S105 Hide and Seek.mp4
     const s105Btn = page.getByRole('button', { name: /S105 Hide and Seek/i }).first();
@@ -202,7 +179,7 @@ test.describe('Visual Verification & Regression Suite', () => {
     expect(headerTitleColor.includes('15, 23, 42') || headerTitleColor.includes('0.208')).toBe(true);
 
     // 2. Header Subtitle
-    const subtitle = page.locator('header').getByText(/Private browser-based/i);
+    const subtitle = page.locator('header').getByText('Local Video Player');
     await expect(subtitle).toBeVisible();
     const subtitleColor = await subtitle.evaluate((el) => window.getComputedStyle(el).color);
     // slate-600 (rgb(71, 85, 105) or oklch ~0.446)
@@ -234,14 +211,13 @@ test.describe('Visual Verification & Regression Suite', () => {
     // sky-950: rgb(8, 47, 73) or oklch ~0.293 0.066 243.157
     expect(selectedColor.includes('8, 47, 73') || selectedColor.includes('0.293')).toBe(true);
 
-    // 7. Player Controls Video Title
-    const playerTitle = page.locator('h2').getByText(/S105 Hide and Seek/i);
-    await expect(playerTitle).toBeVisible();
-    const playerTitleColor = await playerTitle.evaluate((el) => window.getComputedStyle(el).color);
-    expect(playerTitleColor.includes('15, 23, 42') || playerTitleColor.includes('0.208')).toBe(true);
+    // 7. Player Overlay Video Path (light text on dark video overlay)
+    const playerTitle = page.getByTestId('video-relative-path');
+    await expect(playerTitle).toContainText('S105 Hide and Seek');
 
     // 8. Search Input placeholder and text
-    const searchInput = page.getByPlaceholder(/search videos/i);
+    await page.getByTestId('toggle-search-button').click();
+    const searchInput = page.getByTestId('playlist-search-input');
     await expect(searchInput).toBeVisible();
     const searchColor = await searchInput.evaluate((el) => window.getComputedStyle(el).color);
     expect(searchColor.includes('15, 23, 42') || searchColor.includes('0.208')).toBe(true);

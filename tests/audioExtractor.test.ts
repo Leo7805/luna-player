@@ -15,13 +15,14 @@ import {
   BatchExtractionProgress,
   BrowserOutputDirectoryWriter,
   OutputDirectoryWriter,
+  checkIsSameAsSourceDirectory,
   runBatchAudioExtraction,
 } from '../src/services/audioExtractionService';
 import {
   AudioEncoderAdapter,
   FfmpegInitializationError,
 } from '../src/services/ffmpegService';
-import { VideoItem } from '../src/types/video';
+import { VideoItem, VideoLibrary } from '../src/types/video';
 
 function makeVideo(relativePath: string, size = 1024 * 1024): VideoItem {
   const parts = relativePath.replace(/\\/g, '/').split('/');
@@ -695,4 +696,208 @@ it('aborts output writing on cancellation without closing or recording a partial
   await result;
   expect(writable.abort).toHaveBeenCalled();
   expect(writable.close).not.toHaveBeenCalled();
+});
+
+describe('File Mode audio extraction and collision handling', () => {
+  it('plans flat outputs in playlist order with deterministic numeric collision suffixes', () => {
+    const videos = [
+      makeVideo('Movies/Episode 01.mp4'),
+      makeVideo('English/Episode 01.mp4'),
+      makeVideo('Backup/Episode 01.mkv'),
+      makeVideo('Drama/Episode 01 (2).mp4'),
+      makeVideo('Archive/Episode 01.mp4'),
+    ];
+
+    const plan = buildOutputPlan(videos, 'mp3', { preserveFolderStructure: false });
+    expect(plan.map((p) => p.directoryParts)).toEqual([[], [], [], [], []]);
+    expect(plan.map((p) => p.outputRelativePath)).toEqual([
+      'Episode 01.mp3',
+      'Episode 01 (2).mp3',
+      'Episode 01 (3).mp3',
+      'Episode 01 (2) (2).mp3',
+      'Episode 01 (4).mp3',
+    ]);
+    expect(plan.map((p) => p.disambiguated)).toEqual([false, true, true, true, true]);
+  });
+
+  it('extracts a single File Mode video directly into the output folder', async () => {
+    const videos = [makeVideo('Solo Clip.mp4')];
+    const writer = new InMemoryOutputWriter();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockResolvedValue({ data: new Uint8Array([1, 2, 3]), args: [] }),
+      terminate: vi.fn(),
+    };
+
+    const result = await runBatchAudioExtraction({
+      videos,
+      format: 'mp3',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.completedCount).toBe(1);
+    expect(Array.from(writer.writtenFiles.keys())).toEqual(['Solo Clip.mp3']);
+  });
+
+  it('extracts multiple File Mode videos in playlist order without overwriting same-named files from different directories', async () => {
+    const videoA: VideoItem = {
+      ...makeVideo('Episode 01.mp4', 1000),
+      id: 'Episode 01.mp4',
+      file: new File([new Uint8Array([1, 1, 1])], 'Episode 01.mp4', { type: 'video/mp4' }),
+    };
+    const videoB: VideoItem = {
+      ...makeVideo('Video B.webm', 1000),
+      id: 'Video B.webm',
+      file: new File([new Uint8Array([2, 2, 2])], 'Video B.webm', { type: 'video/webm' }),
+    };
+    const videoC: VideoItem = {
+      ...makeVideo('Episode 01.mp4', 1000),
+      id: 'Episode 01.mp4 (2)',
+      file: new File([new Uint8Array([3, 3, 3])], 'Episode 01.mp4', { type: 'video/mp4' }),
+    };
+
+    const extractionOrder: number[] = [];
+    const writer = new InMemoryOutputWriter();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockImplementation(async (file: File) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        extractionOrder.push(bytes[0]);
+        return { data: new Uint8Array([bytes[0], 99]), args: [] };
+      }),
+      terminate: vi.fn(),
+    };
+
+    const result = await runBatchAudioExtraction({
+      videos: [videoA, videoB, videoC],
+      format: 'mp3',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.completedCount).toBe(3);
+    expect(result.skippedCount).toBe(0);
+    expect(result.failedCount).toBe(0);
+    expect(extractionOrder).toEqual([1, 2, 3]);
+    expect(Array.from(writer.writtenFiles.keys())).toEqual([
+      'Episode 01.mp3',
+      'Video B.mp3',
+      'Episode 01 (2).mp3',
+    ]);
+    expect(Array.from(writer.writtenFiles.get('Episode 01.mp3')!)).toEqual([1, 99]);
+    expect(Array.from(writer.writtenFiles.get('Episode 01 (2).mp3')!)).toEqual([3, 99]);
+  });
+
+  it('skips already completed File Mode outputs on Start Again without creating new duplicates', async () => {
+    const videos = [
+      { ...makeVideo('Episode 01.mp4'), id: 'Episode 01.mp4' },
+      { ...makeVideo('Episode 01.mp4'), id: 'Episode 01.mp4 (2)' },
+      { ...makeVideo('Episode 01.mkv'), id: 'Episode 01.mkv' },
+    ];
+    const writer = new InMemoryOutputWriter();
+    const controller = new AbortController();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      extractAudio: vi.fn().mockResolvedValue({ data: new Uint8Array([7, 8]), args: [] }),
+      terminate: vi.fn(),
+    };
+
+    // First run completes the first two outputs and cancels before the third
+    const first = await runBatchAudioExtraction({
+      videos,
+      format: 'webm',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+      signal: controller.signal,
+      onProgress: (p) => {
+        if (p.completedCount === 2) controller.abort();
+      },
+    });
+    expect(first.state).toBe('cancelled');
+    expect(Array.from(writer.writtenFiles.keys())).toEqual([
+      'Episode 01.webm',
+      'Episode 01 (2).webm',
+    ]);
+
+    // Restarting skips the first two and completes only the third
+    const second = await runBatchAudioExtraction({
+      videos,
+      format: 'webm',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+    });
+    expect(second.state).toBe('completed');
+    expect(second.skippedCount).toBe(2);
+    expect(second.completedCount).toBe(1);
+    expect(Array.from(writer.writtenFiles.keys())).toEqual([
+      'Episode 01.webm',
+      'Episode 01 (2).webm',
+      'Episode 01 (3).webm',
+    ]);
+
+    // Clicking Start Again once all outputs exist skips all 3 and creates no new files
+    const third = await runBatchAudioExtraction({
+      videos,
+      format: 'webm',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+    });
+    expect(third.state).toBe('completed');
+    expect(third.skippedCount).toBe(3);
+    expect(third.completedCount).toBe(0);
+    expect(writer.writtenFiles.size).toBe(3);
+  });
+
+  it('returns an error cleanly when given an empty playlist', async () => {
+    const writer = new InMemoryOutputWriter();
+    const encoder: AudioEncoderAdapter = {
+      initialize: vi.fn(),
+      extractAudio: vi.fn(),
+      terminate: vi.fn(),
+    };
+
+    const result = await runBatchAudioExtraction({
+      videos: [],
+      format: 'mp3',
+      writer,
+      preserveFolderStructure: false,
+      encoder,
+    });
+
+    expect(result.state).toBe('error');
+    expect(result.totalFiles).toBe(0);
+    expect(encoder.initialize).not.toHaveBeenCalled();
+    expect(encoder.extractAudio).not.toHaveBeenCalled();
+  });
+
+  it('does not trigger same-as-source directory warning in File Mode', async () => {
+    const filesLibrary: VideoLibrary = {
+      id: 'files:Selected Videos',
+      name: 'Selected Videos',
+      tree: {
+        id: 'root',
+        name: 'Selected Videos',
+        relativePath: '',
+        videos: [],
+        subfolders: [],
+        totalVideoCount: 0,
+      },
+      flatPlaylist: [],
+      sourceType: 'files',
+    };
+    const outputHandle = {
+      kind: 'directory',
+      name: 'Selected Videos',
+    } as unknown as FileSystemDirectoryHandle;
+
+    await expect(checkIsSameAsSourceDirectory(filesLibrary, outputHandle)).resolves.toBe(false);
+  });
 });
